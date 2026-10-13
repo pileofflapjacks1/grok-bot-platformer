@@ -1,7 +1,7 @@
 {
   "_resourceType": "actor",
   "id": "f20e1c46-b705-5602-8b24-dd9cf57b6a4f",
-  "_index": 2,
+  "_index": 3,
   "symbol": "actor_ridge-blob2",
   "prefabId": "",
   "name": "Waddle Blob 2",
@@ -250,7 +250,48 @@
       }
     }
   ],
-  "hit1Script": [],
+  "hit1Script": [
+    {
+      "id": "5139cd3b-c321-5549-a1c1-2cfda96cbe4e",
+      "command": "EVENT_ACTOR_HIDE",
+      "args": {
+        "actorId": "$self$"
+      }
+    },
+    {
+      "id": "3b2d9f94-4555-5a77-999c-55bb7e7f33cb",
+      "command": "EVENT_ACTOR_COLLISIONS_DISABLE",
+      "args": {
+        "actorId": "$self$"
+      }
+    },
+    {
+      "id": "5f09d6ce-a57d-5f7a-8242-cd27d9407d2e",
+      "command": "EVENT_ACTOR_STOP_UPDATE",
+      "args": {
+        "actorId": "$self$"
+      }
+    },
+    {
+      "id": "c79faa41-de7c-586d-b8e9-77eab6857d2b",
+      "command": "EVENT_SOUND_PLAY_EFFECT",
+      "args": {
+        "type": "beep",
+        "priority": "low",
+        "pitch": 5,
+        "duration": 0.12,
+        "units": "time",
+        "wait": false
+      }
+    },
+    {
+      "id": "eca2de2e-00b1-5456-abbd-c75ba8001fed",
+      "command": "EVENT_ACTOR_DEACTIVATE",
+      "args": {
+        "actorId": "$self$"
+      }
+    }
+  ],
   "hit2Script": [],
   "hit3Script": []
 }

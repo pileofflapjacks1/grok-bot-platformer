@@ -33,14 +33,19 @@ OUTLINE = (24, 48, 40, 255)
 WHITE = (244, 244, 248, 255)
 GRAY = (138, 138, 152, 255)
 RED = (248, 72, 72, 255)
-RED_D = (160, 24, 24, 255)
 E_WHITE = (232, 248, 255, 255)
 CYAN = (80, 216, 248, 255)
 BLUE = (24, 72, 200, 255)
 SILVER = (216, 220, 232, 255)
 CHIP_BODY = (96, 104, 120, 255)
 BLACK = (24, 16, 24, 255)
+CREAM = (248, 232, 208, 255)
+CLOUD = (248, 252, 255, 255)
+HILL = (112, 192, 216, 255)
+HILL_SHADE = (40, 112, 144, 255)
 CLEAR = (0, 0, 0, 0)
+# Far background palette. Color 0 matches the ground palette's sky.
+FAR = [SKY, CLOUD, HILL, HILL_SHADE]
 
 # Two scenes of 170 tiles. 340 tiles is five times the previous 68-tile run.
 # One scene cannot be wider than 255 tiles.
@@ -51,12 +56,20 @@ CLEAR_H = 18
 FLOOR_TOP = 15
 PLAYER_START = (2, FLOOR_TOP - 2)
 CLEAR_TOP = 16
-LIVES_AT = (1, 0)
 MUSIC_ID = "f50428ab-a084-4591-9bba-2ba10fe7b1c6"
 BASE_JUMP = 14336
-CHIP_JUMP = 20480
 MAX_ACTORS = 20
 SCENE_GAP = 80
+LIVES_AT = (1, 0)
+AMMO_AT = (16, 0)
+# Screen bands. Speeds are GB Studio parallax values: 0 is normal, 2 is 1/4, 4 is 1/16.
+# Solids stay at row 10 and below so the floor scrolls with the player.
+PARALLAX = [
+    {"height": 5, "speed": 4},
+    {"height": 5, "speed": 2},
+    {"height": 0, "speed": 0},
+]
+PLAY_ROW = 10
 
 
 def world_x(index: int) -> int:
@@ -294,22 +307,77 @@ def draw_grok_bot(
 
 
 def paint_enemy() -> list[list[tuple[int, int, int, int]]]:
-    image = blank(16, 16, CLEAR)
-    # Wider than the player so the blob reads as an enemy.
-    r2 = 7.2 * 7.2
-    inner = 6.0 * 6.0
+    """Two waddle frames: cream eyes with black pupils, belly, brows, and feet."""
+    image = blank(32, 16, CLEAR)
+    draw_blob(image, 0, 0, left_foot=13, right_foot=14)
+    draw_blob(image, 16, 1, left_foot=14, right_foot=13)
+    return image
+
+
+def draw_blob(
+    image: list[list[tuple[int, int, int, int]]],
+    origin: int,
+    bob: int,
+    left_foot: int,
+    right_foot: int,
+) -> None:
+    cx, cy, rx, ry = 8.0, 8.0 + bob, 6.5, 5.6
     for y in range(16):
         for x in range(16):
-            dx = (x + 0.5 - 8) / 1.15
-            dy = y + 0.5 - 9
+            dx = (x + 0.5 - cx) / rx
+            dy = (y + 0.5 - cy) / ry
             dist = dx * dx + dy * dy
-            if dist <= inner:
-                image[y][x] = RED_D if y >= 11 else RED
-            elif dist <= r2:
-                image[y][x] = BLACK
-    stamp_eye(image, 0, 5.4, 8.2, 1.55, 2.1, BLACK)
-    stamp_eye(image, 0, 10.6, 8.2, 1.55, 2.1, BLACK)
-    return image
+            if dist <= 0.8:
+                image[y][origin + x] = RED
+            elif dist <= 1:
+                image[y][origin + x] = BLACK
+    # 4x4 cream eyes, 2x2 pupils, two red pixels between the eyes.
+    for eye_x in (3, 9):
+        for y in range(6 + bob, 10 + bob):
+            for x in range(eye_x, eye_x + 4):
+                put(image, origin, x, y, CREAM)
+        for y in range(7 + bob, 9 + bob):
+            for x in range(eye_x + 1, eye_x + 3):
+                put(image, origin, x, y, BLACK)
+    for y in range(6 + bob, 10 + bob):
+        put(image, origin, 7, y, RED)
+        put(image, origin, 8, y, RED)
+        filled = [x for x in range(16) if image[y][origin + x][3] != 0]
+        if filled:
+            image[y][origin + filled[0]] = BLACK
+            image[y][origin + filled[-1]] = BLACK
+    mouth_y = 11 + bob
+    put(image, origin, 7, mouth_y, BLACK)
+    put(image, origin, 8, mouth_y, BLACK)
+    for y in range(12 + bob, 14 + bob):
+        for x in range(6, 10):
+            if 0 <= y < 16 and image[y][origin + x] == RED:
+                image[y][origin + x] = CREAM
+    paint_foot(image, origin, 3, left_foot)
+    paint_foot(image, origin, 10, right_foot)
+
+
+def put(
+    image: list[list[tuple[int, int, int, int]]],
+    origin: int,
+    x: int,
+    y: int,
+    color: tuple[int, int, int, int],
+) -> None:
+    if 0 <= y < 16 and 0 <= x < 16:
+        image[y][origin + x] = color
+
+
+def paint_foot(
+    image: list[list[tuple[int, int, int, int]]],
+    origin: int,
+    x0: int,
+    y0: int,
+) -> None:
+    for y in range(y0, y0 + 2):
+        for x in range(x0, x0 + 3):
+            if 0 <= y < 16 and 0 <= x < 16:
+                image[y][origin + x] = BLACK
 
 
 def paint_electron() -> list[list[tuple[int, int, int, int]]]:
@@ -379,6 +447,208 @@ def sky_tile() -> list[list[tuple[int, int, int, int]]]:
     return [[SKY for _ in range(8)] for _ in range(8)]
 
 
+DIGITS = (
+    ("111", "101", "101", "101", "111"),
+    ("010", "110", "010", "010", "111"),
+    ("111", "001", "111", "100", "111"),
+    ("111", "001", "111", "001", "111"),
+    ("101", "101", "111", "001", "001"),
+    ("111", "100", "111", "001", "111"),
+    ("111", "100", "111", "101", "111"),
+    ("111", "001", "001", "001", "001"),
+    ("111", "101", "111", "101", "111"),
+    ("111", "101", "111", "001", "111"),
+)
+
+
+def electron_total() -> int:
+    return sum(len(segment["electrons"]) for segment in SEGMENTS)
+
+
+def paint_ammo() -> list[list[tuple[int, int, int, int]]]:
+    """One frame per ammo value, 0 through the last electron. A pinned actor shows it."""
+    count = electron_total() + 1
+    image = blank(count * 16, 16, CLEAR)
+    for value in range(count):
+        origin = value * 16
+        draw_mini_electron(image, origin + 1, 4)
+        draw_digit(image, origin + 7, 5, value // 10)
+        draw_digit(image, origin + 11, 5, value % 10)
+    return image
+
+
+def draw_mini_electron(
+    image: list[list[tuple[int, int, int, int]]],
+    origin_x: int,
+    origin_y: int,
+) -> None:
+    for y in range(5):
+        for x in range(5):
+            dx = x - 2
+            dy = y - 2
+            dist = dx * dx + dy * dy
+            pixel_y = origin_y + y
+            pixel_x = origin_x + x
+            if dist <= 1:
+                image[pixel_y][pixel_x] = E_WHITE
+            elif dist <= 4:
+                image[pixel_y][pixel_x] = CYAN
+            elif dist <= 5:
+                image[pixel_y][pixel_x] = BLUE
+    image[origin_y + 2][origin_x + 1] = BLUE
+    image[origin_y + 2][origin_x + 2] = BLUE
+
+
+def draw_digit(
+    image: list[list[tuple[int, int, int, int]]],
+    origin_x: int,
+    origin_y: int,
+    digit: int,
+) -> None:
+    for y, row in enumerate(DIGITS[digit]):
+        for x, bit in enumerate(row):
+            if bit == "1":
+                image[origin_y + y][origin_x + x] = BLUE
+
+
+def indexed_tile(spec: tuple[str, ...], colors: list[tuple[int, int, int, int]]) -> list[list[tuple[int, int, int, int]]]:
+    return [[colors[int(pixel)] for pixel in row] for row in spec]
+
+
+CLOUD_L = indexed_tile(
+    (
+        "00000000",
+        "00000111",
+        "00001111",
+        "00011111",
+        "00001111",
+        "00000111",
+        "00000000",
+        "00000000",
+    ),
+    FAR,
+)
+CLOUD_M = indexed_tile(
+    (
+        "00000000",
+        "11111111",
+        "11111111",
+        "11111111",
+        "11111111",
+        "11111111",
+        "00000000",
+        "00000000",
+    ),
+    FAR,
+)
+CLOUD_R = indexed_tile(
+    (
+        "00000000",
+        "11100000",
+        "11110000",
+        "11111000",
+        "11110000",
+        "11100000",
+        "00000000",
+        "00000000",
+    ),
+    FAR,
+)
+PUFF = indexed_tile(
+    (
+        "00000000",
+        "00011000",
+        "00111100",
+        "00111100",
+        "00011000",
+        "00000000",
+        "00000000",
+        "00000000",
+    ),
+    FAR,
+)
+SLOPE_L = indexed_tile(
+    (
+        "00000000",
+        "00000000",
+        "00000002",
+        "00000222",
+        "00022222",
+        "00222222",
+        "02222222",
+        "22222222",
+    ),
+    FAR,
+)
+PEAK = indexed_tile(
+    (
+        "00000000",
+        "00000000",
+        "00022000",
+        "00222200",
+        "02222220",
+        "22222222",
+        "22222222",
+        "22222222",
+    ),
+    FAR,
+)
+SLOPE_R = indexed_tile(
+    (
+        "00000000",
+        "00000000",
+        "20000000",
+        "22200000",
+        "22222000",
+        "22222200",
+        "22222220",
+        "22222222",
+    ),
+    FAR,
+)
+HILL_BODY = indexed_tile(
+    (
+        "22222222",
+        "22222222",
+        "22232222",
+        "22222222",
+        "22222322",
+        "22222222",
+        "22222222",
+        "22222222",
+    ),
+    FAR,
+)
+DECOR = {
+    "cloud_l": CLOUD_L,
+    "cloud_m": CLOUD_M,
+    "cloud_r": CLOUD_R,
+    "puff": PUFF,
+    "slope_l": SLOPE_L,
+    "peak": PEAK,
+    "slope_r": SLOPE_R,
+    "hill": HILL_BODY,
+}
+
+
+def decoration_name(tile_x: int, tile_y: int) -> str | None:
+    # Rows 0-4 scroll very slowly, rows 5-9 a bit faster. Both stay above the floor.
+    if tile_y == 1 and tile_x % 16 in (3, 4, 5):
+        return ("cloud_l", "cloud_m", "cloud_r")[tile_x % 16 - 3]
+    if tile_y == 2 and tile_x % 22 in (12, 13, 14):
+        return ("cloud_l", "cloud_m", "cloud_r")[tile_x % 22 - 12]
+    if tile_y == 3 and tile_x % 14 == 8:
+        return "puff"
+    phase = tile_x % 10
+    if phase >= 4:
+        return None
+    if tile_y == 6:
+        return ("slope_l", "peak", "peak", "slope_r")[phase]
+    if tile_y in (7, 8):
+        return "hill"
+    return None
+
+
 def solid_top(segment: dict, x: int) -> int | None:
     for x0, x1 in segment["pits"]:
         if x0 <= x <= x1:
@@ -405,47 +675,46 @@ def paint_lives() -> list[list[tuple[int, int, int, int]]]:
     return image
 
 
-def paint_segment(segment: dict) -> tuple[list[list[tuple[int, int, int, int]]], list[int]]:
-    tiles = {0: sky_tile(), 1: grass_tile(), 2: dirt_tile()}
-    image = blank(SEG_W * 8, LEVEL_H * 8, SKY)
-    collisions = [0] * (SEG_W * LEVEL_H)
-    for tile_y in range(LEVEL_H):
-        for tile_x in range(SEG_W):
-            top = solid_top(segment, tile_x)
+def paint_level(
+    width: int,
+    height: int,
+    solid_at,
+) -> tuple[list[list[tuple[int, int, int, int]]], list[int], list[int]]:
+    ground = {0: sky_tile(), 1: grass_tile(), 2: dirt_tile()}
+    image = blank(width * 8, height * 8, SKY)
+    collisions = [0] * (width * height)
+    tile_colors = [0] * (width * height)
+    for tile_y in range(height):
+        for tile_x in range(width):
+            top = solid_at(tile_x)
+            cell = tile_y * width + tile_x
             if top is None or tile_y < top:
-                kind = 0
+                name = decoration_name(tile_x, tile_y)
+                pattern = DECOR[name] if name else ground[0]
+                if name:
+                    tile_colors[cell] = 1
             elif tile_y == top:
-                kind = 1
-                collisions[tile_y * SEG_W + tile_x] = 15
+                pattern = ground[1]
+                collisions[cell] = 15
             else:
-                kind = 2
-                collisions[tile_y * SEG_W + tile_x] = 15
-            pattern = tiles[kind]
+                pattern = ground[2]
+                collisions[cell] = 15
             for py in range(8):
                 for px in range(8):
                     image[tile_y * 8 + py][tile_x * 8 + px] = pattern[py][px]
-    return image, collisions
+    return image, collisions, tile_colors
 
 
-def paint_clear() -> tuple[list[list[tuple[int, int, int, int]]], list[int]]:
-    tiles = {0: sky_tile(), 1: grass_tile(), 2: dirt_tile()}
-    image = blank(CLEAR_W * 8, CLEAR_H * 8, SKY)
-    collisions = [0] * (CLEAR_W * CLEAR_H)
-    for tile_y in range(CLEAR_H):
-        for tile_x in range(CLEAR_W):
-            if tile_y < CLEAR_TOP:
-                kind = 0
-            elif tile_y == CLEAR_TOP:
-                kind = 1
-                collisions[tile_y * CLEAR_W + tile_x] = 15
-            else:
-                kind = 2
-                collisions[tile_y * CLEAR_W + tile_x] = 15
-            pattern = tiles[kind]
-            for py in range(8):
-                for px in range(8):
-                    image[tile_y * 8 + py][tile_x * 8 + px] = pattern[py][px]
-    return image, collisions
+def paint_segment(segment: dict) -> tuple[list[list[tuple[int, int, int, int]]], list[int], list[int]]:
+    return paint_level(SEG_W, LEVEL_H, lambda tile_x: solid_top(segment, tile_x))
+
+
+def paint_clear() -> tuple[list[list[tuple[int, int, int, int]]], list[int], list[int]]:
+    def solid_at(tile_x: int) -> int:
+        del tile_x
+        return CLEAR_TOP
+
+    return paint_level(CLEAR_W, CLEAR_H, solid_at)
 
 
 def unique_tiles(image: list[list[tuple[int, int, int, int]]], tile: int = 8) -> int:
@@ -563,9 +832,13 @@ def fixed_animation(name: str) -> list[dict]:
 
 def lives_animations() -> list[dict]:
     # Frame index matches the lives variable: 0, 1, 2, then 3 hearts.
-    frames = [frame_of(f"lives-f{index}", index * 16) for index in range(4)]
-    animations = [{"id": uid("lives-anim0"), "frames": frames}]
-    animations.extend(empty_frame(f"lives-anim{index}") for index in range(1, 8))
+    return frames_animation("lives", 4)
+
+
+def frames_animation(name: str, count: int) -> list[dict]:
+    frames = [frame_of(f"{name}-f{index}", index * 16) for index in range(count)]
+    animations = [{"id": uid(name + "-anim0"), "frames": frames}]
+    animations.extend(empty_frame(f"{name}-anim{index}") for index in range(1, 8))
     return animations
 
 
@@ -576,13 +849,14 @@ def background_resource(
     filename: str,
     tiles_x: int,
     tiles_y: int,
+    tile_colors: list[int],
 ) -> dict:
     return {
         "_resourceType": "background",
         "id": uid(symbol),
         "name": name,
         "symbol": symbol,
-        "tileColors": compress8([0] * (tiles_x * tiles_y)),
+        "tileColors": compress8(tile_colors),
         "filename": filename,
         "width": tiles_x,
         "height": tiles_y,
@@ -621,6 +895,7 @@ def actor(
     palette_name: str,
     script: list,
     update_script: list | None = None,
+    hit1_script: list | None = None,
     frame: int = 0,
     animate: bool = True,
     pinned: bool = False,
@@ -651,7 +926,7 @@ def actor(
         "script": script,
         "startScript": [],
         "updateScript": update_script or [],
-        "hit1Script": [],
+        "hit1Script": hit1_script or [],
         "hit2Script": [],
         "hit3Script": [],
     }
@@ -689,8 +964,9 @@ def scene(
     sprite_palette_ids: list[str],
     script: list,
     collisions: list[int],
+    parallax: list | None = None,
 ) -> dict:
-    return {
+    data = {
         "_resourceType": "scene",
         "id": uid(symbol),
         "_index": index,
@@ -713,6 +989,9 @@ def scene(
         "playerHit3Script": [],
         "collisions": compress8(collisions),
     }
+    if parallax:
+        data["parallax"] = parallax
+    return data
 
 
 def beep(name: str, pitch: int) -> dict:
@@ -807,9 +1086,9 @@ def enemy_update(suffix: str) -> list:
     ]
 
 
-def vanish_blob(suffix: str) -> list:
+def vanish_blob(suffix: str, bounce: bool) -> list:
     # Hide first so the sprite is gone even if deactivate ends the script.
-    return [
+    steps = [
         event(f"blob-hide-{suffix}", "EVENT_ACTOR_HIDE", {"actorId": "$self$"}),
         event(
             f"blob-nocol-{suffix}",
@@ -817,10 +1096,12 @@ def vanish_blob(suffix: str) -> list:
             {"actorId": "$self$"},
         ),
         event(f"blob-stop-{suffix}", "EVENT_ACTOR_STOP_UPDATE", {"actorId": "$self$"}),
-        beep(f"blob-stomp-sound-{suffix}", 6),
-        event(f"blob-bounce-{suffix}", "EVENT_PLAYER_BOUNCE", {"height": "medium"}),
-        deactivate(f"blob-stomp-hide-{suffix}"),
+        beep(f"blob-stomp-sound-{suffix}", 6 if bounce else 5),
     ]
+    if bounce:
+        steps.append(event(f"blob-bounce-{suffix}", "EVENT_PLAYER_BOUNCE", {"height": "medium"}))
+    steps.append(deactivate(f"blob-stomp-hide-{suffix}"))
+    return steps
 
 
 def enemy_script(suffix: str) -> list:
@@ -841,7 +1122,7 @@ def enemy_script(suffix: str) -> list:
             },
             "__collapseElse": False,
         },
-        {"true": vanish_blob(suffix + "-fall"), "false": hurt},
+        {"true": vanish_blob(suffix + "-fall", True), "false": hurt},
     )
     return [
         event(
@@ -853,7 +1134,7 @@ def enemy_script(suffix: str) -> list:
                 "otherActorId": "$self$",
                 "__collapseElse": False,
             },
-            {"true": vanish_blob(suffix + "-above"), "false": [falling]},
+            {"true": vanish_blob(suffix + "-above", True), "false": [falling]},
         )
     ]
 
@@ -866,22 +1147,78 @@ def set_engine(name: str, key: str, number: int) -> dict:
     )
 
 
-def electron_script(name: str) -> list:
+def electron_script(name: str, ammo_symbol: str) -> list:
     return [
         event(f"{name}-inc", "EVENT_INC_VALUE", {"variable": "0"}),
+        show_counter(f"{name}-ammo", ammo_symbol, "0"),
         beep(f"{name}-sound", 7),
         deactivate(f"{name}-hide"),
     ]
 
 
 def chip_script(name: str) -> list:
-    # Overclock: a higher jump for the rest of the run. Scene 1 init puts it back.
+    # The chip unlocks firing. It does not change the jump.
     return [
         set_number(f"{name}-flag", "2", 1),
-        set_engine(f"{name}-jump", "plat_jump_vel", CHIP_JUMP),
         beep(f"{name}-sound", 10),
         deactivate(f"{name}-hide"),
     ]
+
+
+def launch_electron(name: str) -> dict:
+    return event(
+        name,
+        "EVENT_LAUNCH_PROJECTILE",
+        {
+            "spriteSheetId": uid("sprite_electron"),
+            "spriteStateId": uid("sprite_electron-state"),
+            "actorId": "player",
+            "x": 0,
+            "y": 2,
+            "directionType": "actor",
+            "otherActorId": "player",
+            "direction": "right",
+            "speed": 3,
+            "animSpeed": 15,
+            "lifeTime": 1.2,
+            "initialOffset": 12,
+            "loopAnim": True,
+            "destroyOnHit": True,
+            "collisionGroup": "1",
+            "collisionMask": ["1"],
+        },
+    )
+
+
+def attach_fire(segment: dict) -> dict:
+    # B still runs. A press fires only after the chip, and only while ammo remains.
+    key = segment["key"]
+    ammo_symbol = f"actor_ammo_{key}"
+    shot = [
+        event(f"{key}-shot-dec", "EVENT_DEC_VALUE", {"variable": "0"}),
+        show_counter(f"{key}-shot-hud", ammo_symbol, "0"),
+        beep(f"{key}-shot-sound", 8),
+        launch_electron(f"{key}-shot-launch"),
+    ]
+    limited = event(
+        f"{key}-shot-limit",
+        "EVENT_RATE_LIMIT",
+        {
+            "variable": "3",
+            "units": "time",
+            "time": {"type": "number", "value": 0.3},
+            "frames": {"type": "number", "value": 1},
+        },
+        {"true": shot},
+    )
+    armed = if_value(f"{key}-shot-chip", "2", ">", 0, [limited])
+    has_ammo = if_value(f"{key}-shot-ammo", "0", ">", 0, [armed])
+    return event(
+        f"{key}-fire-input",
+        "EVENT_SET_INPUT_SCRIPT",
+        {"input": ["b"], "override": False},
+        {"true": [has_ammo]},
+    )
 
 
 def exit_script() -> list:
@@ -906,21 +1243,29 @@ def respawn(name: str, x: int, y: int) -> list:
     ]
 
 
-def show_lives(name: str, actor_symbol: str) -> dict:
+def show_counter(name: str, actor_symbol: str, variable: str) -> dict:
     return event(
         name,
         "EVENT_ACTOR_SET_FRAME",
         {
             "actorId": uid(actor_symbol),
-            "frame": {"type": "variable", "value": "1"},
+            "frame": {"type": "variable", "value": variable},
         },
     )
+
+
+def show_lives(name: str, actor_symbol: str) -> dict:
+    return show_counter(name, actor_symbol, "1")
+
+
+def show_ammo(name: str, actor_symbol: str) -> dict:
+    return show_counter(name, actor_symbol, "0")
 
 
 def pit_script(name: str, segment: dict) -> list:
     # The trigger sits at the bottom of the gap, so this runs after the fall.
     # Hearts update in place. Only a game over reloads, and it reloads scene 1
-    # so lives, electrons, and the chip jump all start over.
+    # so lives, ammo, and the chip all start over.
     lives_symbol = f"actor_lives_{segment['key']}"
     start_x, start_y = PLAYER_START
     return [
@@ -941,10 +1286,12 @@ def pit_script(name: str, segment: dict) -> list:
 
 
 def segment_init(segment: dict) -> list:
-    lives_symbol = f"actor_lives_{segment['key']}"
+    key = segment["key"]
+    lives_symbol = f"actor_lives_{key}"
+    ammo_symbol = f"actor_ammo_{key}"
     script = [
         event(
-            f"{segment['key']}-music",
+            f"{key}-music",
             "EVENT_MUSIC_PLAY",
             {"musicId": MUSIC_ID, "loop": True},
         )
@@ -952,24 +1299,33 @@ def segment_init(segment: dict) -> list:
     if segment["reset"]:
         script.extend(
             [
-                set_number(f"{segment['key']}-electrons", "0", 0),
-                set_number(f"{segment['key']}-lives", "1", 3),
-                set_number(f"{segment['key']}-chip", "2", 0),
-                set_engine(f"{segment['key']}-jump", "plat_jump_vel", BASE_JUMP),
+                set_number(f"{key}-electrons", "0", 0),
+                set_number(f"{key}-lives", "1", 3),
+                set_number(f"{key}-chip", "2", 0),
+                set_number(f"{key}-cooldown", "3", 0),
+                set_engine(f"{key}-jump", "plat_jump_vel", BASE_JUMP),
             ]
         )
-    script.append(show_lives(f"{segment['key']}-hearts", lives_symbol))
+    script.append(show_lives(f"{key}-hearts", lives_symbol))
+    script.append(show_ammo(f"{key}-ammo", ammo_symbol))
+    script.append(attach_fire(segment))
     return script
+
+
+def shot_blob(suffix: str) -> list:
+    return vanish_blob(suffix + "-shot", False)
 
 
 def build_images() -> dict:
     sprites = ROOT / "assets" / "sprites"
     backgrounds = ROOT / "assets" / "backgrounds"
+    ammo_frames = electron_total() + 1
     write_png(sprites / "player_grok.png", 64, 16, paint_player())
-    write_png(sprites / "enemy_red_blob.png", 16, 16, paint_enemy())
+    write_png(sprites / "enemy_red_blob.png", 32, 16, paint_enemy())
     write_png(sprites / "electron.png", 16, 16, paint_electron())
     write_png(sprites / "silicon_chip.png", 16, 16, paint_chip())
     write_png(sprites / "lives.png", 64, 16, paint_lives())
+    write_png(sprites / "ammo.png", ammo_frames * 16, 16, paint_ammo())
     for stale in (
         "player_pink.png",
         "player_pink.png.gbsres",
@@ -981,15 +1337,20 @@ def build_images() -> dict:
             path.unlink()
     painted = {}
     for segment in SEGMENTS:
-        image, collisions = paint_segment(segment)
+        image, collisions, colors = paint_segment(segment)
         write_png(backgrounds / segment["bg_file"], SEG_W * 8, LEVEL_H * 8, image)
         painted[segment["symbol"]] = {
             "tiles": unique_tiles(image),
             "collisions": collisions,
+            "colors": colors,
         }
-    clear, clear_collisions = paint_clear()
+    clear, clear_collisions, clear_colors = paint_clear()
     write_png(backgrounds / "level1_clear.png", CLEAR_W * 8, CLEAR_H * 8, clear)
-    painted["clear"] = {"tiles": unique_tiles(clear), "collisions": clear_collisions}
+    painted["clear"] = {
+        "tiles": unique_tiles(clear),
+        "collisions": clear_collisions,
+        "colors": clear_colors,
+    }
     return painted
 
 
@@ -1026,6 +1387,7 @@ def write_segment(
             sprite_palette_ids=sprite_ids,
             script=segment_init(segment),
             collisions=collisions,
+            parallax=PARALLAX,
         ),
     )
     next_index = 1
@@ -1046,6 +1408,24 @@ def write_segment(
             collision_group="",
         ),
     )
+    write_json(
+        actor_dir / "ammo.gbsres",
+        actor(
+            name="Ammo",
+            symbol=f"actor_ammo_{key}",
+            index=next_index,
+            x=AMMO_AT[0],
+            y=AMMO_AT[1],
+            sprite_symbol="sprite_ammo",
+            palette_name="Electron Blue",
+            script=[],
+            frame=0,
+            animate=False,
+            pinned=True,
+            collision_group="",
+        ),
+    )
+    next_index += 1
     for index, (x, y) in enumerate(segment["blobs"], start=1):
         suffix = f"{key}-blob{index}"
         write_json(
@@ -1060,6 +1440,7 @@ def write_segment(
                 palette_name="Blob Red",
                 script=enemy_script(suffix),
                 update_script=enemy_update(suffix),
+                hit1_script=shot_blob(suffix),
             ),
         )
         next_index += 1
@@ -1075,7 +1456,8 @@ def write_segment(
                 y=y,
                 sprite_symbol="sprite_electron",
                 palette_name="Electron Blue",
-                script=electron_script(suffix),
+                script=electron_script(suffix, f"actor_ammo_{key}"),
+                collision_group="",
             ),
         )
         next_index += 1
@@ -1093,6 +1475,7 @@ def write_segment(
                 sprite_symbol="sprite_silicon_chip",
                 palette_name="Chip Gray",
                 script=chip_script(suffix),
+                collision_group="",
             ),
         )
     trigger_index = 0
@@ -1149,11 +1532,11 @@ def build_resources(collisions: dict) -> None:
             symbol="sprite_enemy_red_blob",
             filename="enemy_red_blob.png",
             image_path=sprites / "enemy_red_blob.png",
-            width=16,
+            width=32,
             height=16,
             animation_type="fixed",
-            animations=fixed_animation("enemy"),
-            num_tiles=2,
+            animations=frames_animation("enemy", 2),
+            num_tiles=4,
         ),
     )
     write_json(
@@ -1198,6 +1581,21 @@ def build_resources(collisions: dict) -> None:
             num_tiles=8,
         ),
     )
+    ammo_frames = electron_total() + 1
+    write_json(
+        sprites / "ammo.png.gbsres",
+        sprite_resource(
+            name="ammo",
+            symbol="sprite_ammo",
+            filename="ammo.png",
+            image_path=sprites / "ammo.png",
+            width=ammo_frames * 16,
+            height=16,
+            animation_type="fixed",
+            animations=frames_animation("ammo", ammo_frames),
+            num_tiles=ammo_frames * 2,
+        ),
+    )
     for segment in SEGMENTS:
         write_json(
             backgrounds / f"{segment['bg_file']}.gbsres",
@@ -1207,6 +1605,7 @@ def build_resources(collisions: dict) -> None:
                 filename=segment["bg_file"],
                 tiles_x=SEG_W,
                 tiles_y=LEVEL_H,
+                tile_colors=collisions[segment["symbol"]]["colors"],
             ),
         )
     write_json(
@@ -1217,6 +1616,7 @@ def build_resources(collisions: dict) -> None:
             filename="level1_clear.png",
             tiles_x=CLEAR_W,
             tiles_y=CLEAR_H,
+            tile_colors=collisions["clear"]["colors"],
         ),
     )
 
@@ -1226,12 +1626,16 @@ def build_resources(collisions: dict) -> None:
         palette("Green Hills", ["B8F0E8", "68D070", "289038", "183028"]),
     )
     write_json(
+        palettes / "far_hills.gbsres",
+        palette("Far Hills", ["B8F0E8", "F8FCFF", "70C0D8", "287090"]),
+    )
+    write_json(
         palettes / "grok_bot.gbsres",
         palette("Grok Bot", ["F8F8F8", "F4F4F8", "8A8A98", "181018"]),
     )
     write_json(
         palettes / "blob_red.gbsres",
-        palette("Blob Red", ["F8F8F8", "F84848", "A01818", "181018"]),
+        palette("Blob Red", ["F8F8F8", "F84848", "F8E8D0", "181018"]),
     )
     write_json(
         palettes / "electron_blue.gbsres",
@@ -1248,7 +1652,7 @@ def build_resources(collisions: dict) -> None:
 
     bg_ids = [
         uid("palette-Green Hills"),
-        "default-bg-2",
+        uid("palette-Far Hills"),
         "default-bg-3",
         "default-bg-4",
         "default-bg-5",
@@ -1321,6 +1725,8 @@ def patch_project() -> None:
     settings["playerPaletteId"] = uid("palette-Grok Bot")
     settings["defaultSpritePaletteId"] = uid("palette-Grok Bot")
     settings["defaultBackgroundPaletteIds"][0] = uid("palette-Green Hills")
+    if len(settings["defaultBackgroundPaletteIds"]) > 1:
+        settings["defaultBackgroundPaletteIds"][1] = uid("palette-Far Hills")
     settings["defaultSpritePaletteIds"] = [
         uid("palette-Grok Bot"),
         uid("palette-Blob Red"),
@@ -1361,6 +1767,12 @@ def patch_project() -> None:
                     "symbol": "var_chip",
                     "type": "number",
                 },
+                {
+                    "id": "3",
+                    "name": "shot_cooldown",
+                    "symbol": "var_shot_cooldown",
+                    "type": "number",
+                },
             ],
             "constants": [],
         },
@@ -1397,10 +1809,11 @@ GB Studio reads every `.png` in this folder. The Level 1 sheets below are 16x16,
 | File | Use |
 |------|-----|
 | player_grok.png | Grok Bot. Round head, antenna, black capsule eyes, no mouth. Four frames: idle, walk A, walk B, jump. Left facing is mirrored. |
-| enemy_red_blob.png | Waddle Blob |
-| electron.png | Coin-sized electron. Touching it adds one to `electrons`. |
-| silicon_chip.png | One power-up. Collecting it raises the jump for the rest of the run. |
+| enemy_red_blob.png | Waddle Blob. Two frames, cream eyes, black pupils, belly, brows, and feet. |
+| electron.png | Electron pickup and the projectile Grok Bot fires. |
+| silicon_chip.png | One power-up. Collecting it unlocks firing for the rest of the run. |
 | lives.png | Four frames in one animation. Frame 0 is empty, then 1, 2, and 3 hearts. The pinned actor shows the frame that matches `lives`. |
+| ammo.png | One frame per electron count, from 0 up. The pinned actor shows the frame that matches `electrons`. |
 
 `actor.png`, `actor_animated.png`, and `static.png` are the GB Studio blank-template placeholders. The player setting points at `player_grok.png`.
 
@@ -1424,9 +1837,13 @@ def validate_layout() -> None:
         bodies = list(segment["blobs"]) + list(segment["electrons"])
         if segment["chip"] is not None:
             bodies.append(segment["chip"])
-        actor_count = 1 + len(bodies)
+        actor_count = 2 + len(bodies)
         if actor_count > MAX_ACTORS:
             raise SystemExit(f"{label} has {actor_count} actors; the limit is {MAX_ACTORS}")
+        for x in range(SEG_W):
+            top = solid_top(segment, x)
+            if top is not None and top < PLAY_ROW:
+                raise SystemExit(f"{label} solid at column {x} is inside the scenery band")
         for x0, x1 in segment["pits"]:
             for x in range(x0, x1 + 1):
                 if solid_top(segment, x) is not None:
@@ -1473,7 +1890,7 @@ def validate_layout() -> None:
 
 
 def layout_rows(segment: dict) -> list[str]:
-    marks = {PLAYER_START: "P", LIVES_AT: "H"}
+    marks = {PLAYER_START: "P", LIVES_AT: "H", AMMO_AT: "A"}
     for x, y in segment["blobs"]:
         marks[(x, y)] = "B"
     for x, y in segment["electrons"]:
@@ -1515,9 +1932,9 @@ def main() -> None:
         info = painted[segment["symbol"]]
         if len(info["collisions"]) != SEG_W * LEVEL_H:
             raise SystemExit(f"{segment['name']} collision size mismatch")
-        if info["tiles"] != 3:
+        if info["tiles"] > 16:
             raise SystemExit(f"{segment['name']} has {info['tiles']} background tiles")
-        actors = 1 + len(segment["blobs"]) + len(segment["electrons"]) + (segment["chip"] is not None)
+        actors = 2 + len(segment["blobs"]) + len(segment["electrons"]) + (segment["chip"] is not None)
         print(f"{segment['name']}: {SEG_W} tiles, {actors} actors, {info['tiles']} background tiles")
         print("\n".join(layout_rows(segment)))
     if len(painted["clear"]["collisions"]) != CLEAR_W * CLEAR_H:

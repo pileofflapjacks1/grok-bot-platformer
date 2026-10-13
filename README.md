@@ -17,16 +17,17 @@ Open `GrokBotPlatformer.gbsproj` in GB Studio 4.2 or newer and press Play.
 Level 1 is two scenes and 340 tiles wide, about five times the previous run. Green Hills leads straight into High Ridge. A full clear is a few minutes, not a 15 second clip.
 
 - Grok Bot is a round head with an antenna and black capsule eyes. Left facing is mirrored.
-- Thirteen Waddle Blobs. Stomping one hides it and bounces you. Touching one from the side knocks you back.
-- Twenty-two electrons, picked up like coins. Each one adds to `electrons`. You do not need all of them to finish.
-- One silicon chip, on a ledge in Green Hills. Collecting it raises the jump from 3.5 to 5 for the rest of the run.
-- You start with 3 lives, shown as hearts in the top-left. Each half has one pit. Falling to the bottom costs a life and puts you back at the start of that half, without pausing. Electrons you already collected stay collected, and a blob you already stomped stays gone. At 0 lives the scene says "Game Over" and restarts from the beginning.
+- Move with the arrows or WASD. Jump with Alt, Z, or J. Hold Control, K, or X to run. That same button fires an electron once Grok Bot is armed.
+- Thirteen Waddle Blobs, with eyes, a belly, brows, and feet. Stomping one hides it and bounces you. Touching one from the side knocks you back. A shot also removes the blob, without the bounce.
+- Twenty-two electrons. Touching one adds it to the ammo counter in the top-right. You do not need all of them to finish.
+- One silicon chip, on a ledge in Green Hills. Collect it before the shots will fire. Until then, the run button only runs. Each shot spends one electron. The jump stays at 3.5.
+- You start with 3 lives, shown as hearts in the top-left. Each half has one pit. Falling to the bottom costs a life and puts you back at the start of that half, without pausing. Electrons you already collected stay collected, and a blob you already removed stays gone. At 0 lives the scene says "Game Over" and restarts from the beginning, which clears the ammo and the chip.
 - The template song starts again at the beginning of each half.
 - The exit at the end of High Ridge loads a small “Level 1 clear!” scene.
 
-Jump feel is set in `project/engine_field_values.gbsres`: jump velocity 3.5, a slightly lower hold-gravity, coyote time, and jump buffering. The chip raises `plat_jump_vel` to 20480 until a game over. See `docs/PLATFORMER_PLUS.md`.
+Jump feel is set in `project/engine_field_values.gbsres`: jump velocity 3.5, a slightly lower hold-gravity, coyote time, and jump buffering. See `docs/PLATFORMER_PLUS.md`.
 
-The background uses 3 unique tiles. One screen shows the player, the hearts, and at most one blob plus a couple of electrons.
+The sky has clouds and distant hills. Those bands scroll slower than the ground. One screen shows the player, the hearts, the ammo count, and at most one blob plus a couple of electrons.
 
 `python3 scripts/build_level1.py` regenerates the level art, scenes, and those settings. It does not remove the GB Studio template fonts or UI.
 
@@ -40,6 +41,7 @@ Level 1 sheets are in `assets/sprites/`:
 - `electron.png`
 - `silicon_chip.png`
 - `lives.png`
+- `ammo.png`
 
 Shape and color variants from `docs/CHARACTER_SELECTION.md` are not in the project yet.
 
