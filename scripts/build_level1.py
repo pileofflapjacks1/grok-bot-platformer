@@ -105,7 +105,8 @@ SEGMENTS = [
             (94, 7),
             (104, 6),
         ],
-        "chip": (132, 9),
+        # On the floor, before every electron, so the demo arms Grok Bot first.
+        "chip": (6, 13),
         "next": "scene_level1_high_ridge",
     },
     {
@@ -1457,7 +1458,8 @@ def write_segment(
                 sprite_symbol="sprite_electron",
                 palette_name="Electron Blue",
                 script=electron_script(suffix, f"actor_ammo_{key}"),
-                collision_group="",
+                # Group 2 is touched by the player. Shots only hit group 1.
+                collision_group="2",
             ),
         )
         next_index += 1
@@ -1475,7 +1477,7 @@ def write_segment(
                 sprite_symbol="sprite_silicon_chip",
                 palette_name="Chip Gray",
                 script=chip_script(suffix),
-                collision_group="",
+                collision_group="2",
             ),
         )
     trigger_index = 0
@@ -1874,6 +1876,9 @@ def validate_layout() -> None:
                 raise SystemExit(f"{label} chip is buried")
             if ground - FLOOR_TOP > 4:
                 raise SystemExit(f"{label} chip ledge is too high for the base jump")
+            for electron_x, _electron_y in segment["electrons"]:
+                if electron_x <= chip_x:
+                    raise SystemExit(f"{label} electron at x={electron_x} is not after the chip")
         if solid_top(segment, PLAYER_START[0]) != PLAYER_START[1] + 2:
             raise SystemExit(f"{label} start is not on the floor")
         gate_x = SEG_W - 4

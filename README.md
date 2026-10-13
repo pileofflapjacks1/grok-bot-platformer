@@ -20,7 +20,7 @@ Level 1 is two scenes and 340 tiles wide, about five times the previous run. Gre
 - Move with the arrows or WASD. Jump with Alt, Z, or J. Hold Control, K, or X to run. That same button fires an electron once Grok Bot is armed.
 - Thirteen Waddle Blobs, with eyes, a belly, brows, and feet. Stomping one hides it and bounces you. Touching one from the side knocks you back. A shot also removes the blob, without the bounce.
 - Twenty-two electrons. Touching one adds it to the ammo counter in the top-right. You do not need all of them to finish.
-- One silicon chip, on a ledge in Green Hills. Collect it before the shots will fire. Until then, the run button only runs. Each shot spends one electron. The jump stays at 3.5.
+- One silicon chip, on the ground a few steps from the start of Green Hills. The electrons are after it. Collect the chip before the shots will fire. Until then, the run button only runs. Each shot spends one electron. The jump stays at 3.5.
 - You start with 3 lives, shown as hearts in the top-left. Each half has one pit. Falling to the bottom costs a life and puts you back at the start of that half, without pausing. Electrons you already collected stay collected, and a blob you already removed stays gone. At 0 lives the scene says "Game Over" and restarts from the beginning, which clears the ammo and the chip.
 - The template song starts again at the beginning of each half.
 - The exit at the end of High Ridge loads a small “Level 1 clear!” scene.
