@@ -1,0 +1,119 @@
+{
+  "_resourceType": "trigger",
+  "id": "4993a3dc-1563-5972-9f26-2eacc871671e",
+  "_index": 1,
+  "symbol": "trigger_pit",
+  "prefabId": "",
+  "name": "Pit",
+  "x": 32,
+  "y": 15,
+  "width": 3,
+  "height": 3,
+  "prefabScriptOverrides": {},
+  "script": [
+    {
+      "id": "057885ee-6bb7-5c74-8158-348d62173fe2",
+      "command": "EVENT_DEC_VALUE",
+      "args": {
+        "variable": "1"
+      }
+    },
+    {
+      "id": "ebb6022b-830b-574d-9f68-338c6ff89af5",
+      "command": "EVENT_ACTOR_SET_FRAME",
+      "args": {
+        "actorId": "940a42de-c0ba-50d8-89ac-6a0266c5169d",
+        "frame": {
+          "type": "variable",
+          "value": "1"
+        }
+      }
+    },
+    {
+      "id": "f6a5ef57-57b8-5654-85d5-ffc4b088b6d6",
+      "command": "EVENT_IF_VALUE",
+      "args": {
+        "variable": "1",
+        "operator": "==",
+        "comparator": 0,
+        "__collapseElse": false
+      },
+      "children": {
+        "true": [
+          {
+            "id": "f7ea01b7-1334-5588-9399-a090273d7b61",
+            "command": "EVENT_TEXT",
+            "args": {
+              "text": "Game Over"
+            }
+          },
+          {
+            "id": "3ee71fe1-402c-5d6f-9248-06df81edaf48",
+            "command": "EVENT_SWITCH_SCENE",
+            "args": {
+              "sceneId": "3ed68e53-19c9-533f-acfb-b7c4c3d89e8e",
+              "x": {
+                "type": "number",
+                "value": 2
+              },
+              "y": {
+                "type": "number",
+                "value": 13
+              },
+              "direction": "right",
+              "fadeSpeed": "2"
+            }
+          }
+        ],
+        "false": [
+          {
+            "id": "b38c6169-8675-5045-87ad-04717f2eb995",
+            "command": "EVENT_ACTOR_SET_POSITION",
+            "args": {
+              "actorId": "player",
+              "x": {
+                "type": "number",
+                "value": 2
+              },
+              "y": {
+                "type": "number",
+                "value": 13
+              },
+              "units": "tiles"
+            }
+          },
+          {
+            "id": "3ca00b72-5933-5fbb-8ffa-66d7761e493e",
+            "command": "EVENT_ENGINE_FIELD_SET",
+            "args": {
+              "engineFieldKey": "plat_vel_x",
+              "value": {
+                "type": "number",
+                "value": 0
+              }
+            }
+          },
+          {
+            "id": "8fd9f7b1-ac63-5e3c-a75c-3bcef58fd1ec",
+            "command": "EVENT_ENGINE_FIELD_SET",
+            "args": {
+              "engineFieldKey": "plat_vel_y",
+              "value": {
+                "type": "number",
+                "value": 0
+              }
+            }
+          },
+          {
+            "id": "1ca8b998-0789-5fdd-bb58-4fef27d733e3",
+            "command": "EVENT_PLATFORMER_STATE_SET",
+            "args": {
+              "state": "ground"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "leaveScript": []
+}

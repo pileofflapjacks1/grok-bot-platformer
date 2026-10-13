@@ -7,6 +7,7 @@ GB Studio reads every `.png` in this folder. The Level 1 sheets below are 16x16,
 | player_pink.png | Grok Bot, right-facing. Four frames: idle, walk A, walk B, jump. Left facing is mirrored. |
 | enemy_red_blob.png | Waddle Blob |
 | collectible_star.png | Power-up star |
+| lives.png | Four frames in one animation. Frame 0 is empty, then 1, 2, and 3 hearts. The pinned actor shows the frame that matches `lives`. |
 
 `actor.png`, `actor_animated.png`, and `static.png` are the GB Studio blank-template placeholders. The player setting points at `player_pink.png`.
 

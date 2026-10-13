@@ -38,19 +38,31 @@ ORANGE = (224, 144, 16, 255)
 BLACK = (24, 16, 24, 255)
 CLEAR = (0, 0, 0, 0)
 
-LEVEL_W = 32
+LEVEL_W = 68
 LEVEL_H = 18
 CLEAR_W = 20
 CLEAR_H = 18
 
-# Solid surfaces are the top tile of each platform. Everything below is solid.
-# Pits are the gaps the player falls through.
-START_X0, START_X1, START_TOP = 0, 7, 15
-MID_X0, MID_X1, MID_TOP = 10, 17, 13
-LOW_X0, LOW_X1, LOW_TOP = 20, 23, 15
-FINAL_X0, FINAL_X1, FINAL_TOP = 24, 31, 14
-PLAYER_START = (2, START_TOP - 2)
+# About 3.4 screens. One hole in the middle is the only pit.
+# Other height changes are solid all the way down, so the run has to jump.
+FLOOR_TOP = 15
+FLOOR = [(0, 31, FLOOR_TOP), (35, 67, FLOOR_TOP)]
+# The first ledge stops early so a running jump off it still lands before the pit.
+RAISED = [(16, 24, 12), (48, 67, 13)]
+PIT = (32, 34)
+PLAYER_START = (2, FLOOR_TOP - 2)
 CLEAR_TOP = 16
+MUSIC_ID = "f50428ab-a084-4591-9bba-2ba10fe7b1c6"
+
+# Sprite positions are the top-left tile. A 16px actor on a ledge uses y = top - 2.
+BLOB_1 = (20, 10)
+BLOB_2 = (52, 11)
+STARS = [(6, 10), (40, 9), (61, 8)]
+EXIT_BOX = (64, 11, 3, 2)
+PIT_BOX = (32, 15, 3, 3)
+LIVES_AT = (1, 0)
+# Level scene is 544px wide from x=80, so the clear scene starts past that.
+CLEAR_SCENE_X = 680
 
 
 def uid(name: str) -> str:
@@ -251,15 +263,28 @@ def sky_tile() -> list[list[tuple[int, int, int, int]]]:
 
 
 def solid_top(x: int) -> int | None:
-    if START_X0 <= x <= START_X1:
-        return START_TOP
-    if MID_X0 <= x <= MID_X1:
-        return MID_TOP
-    if LOW_X0 <= x <= LOW_X1:
-        return LOW_TOP
-    if FINAL_X0 <= x <= FINAL_X1:
-        return FINAL_TOP
-    return None
+    if PIT[0] <= x <= PIT[1]:
+        return None
+    tops = [top for x0, x1, top in FLOOR + RAISED if x0 <= x <= x1]
+    if not tops:
+        return None
+    return min(tops)
+
+
+def paint_lives() -> list[list[tuple[int, int, int, int]]]:
+    """Four frames: 0, 1, 2, and 3 red hearts. Frame index matches `lives`."""
+    image = blank(64, 16, CLEAR)
+    outline = [(0, 0), (2, 0), (4, 0), (0, 2), (4, 2), (1, 3), (3, 3), (2, 4)]
+    fill = [(1, 0), (3, 0), (1, 1), (2, 1), (3, 1), (1, 2), (2, 2), (3, 2), (2, 3)]
+    for frame in range(4):
+        for slot in range(frame):
+            ox = frame * 16 + slot * 5
+            oy = 4
+            for x, y in outline:
+                image[oy + y][ox + x] = BLACK
+            for x, y in fill:
+                image[oy + y][ox + x] = RED
+    return image
 
 
 def paint_level() -> tuple[list[list[tuple[int, int, int, int]]], list[int]]:
@@ -418,6 +443,14 @@ def fixed_animation(name: str) -> list[dict]:
     return animations
 
 
+def lives_animations() -> list[dict]:
+    # Frame index matches the lives variable: 0, 1, 2, then 3 hearts.
+    frames = [frame_of(f"lives-f{index}", index * 16) for index in range(4)]
+    animations = [{"id": uid("lives-anim0"), "frames": frames}]
+    animations.extend(empty_frame(f"lives-anim{index}") for index in range(1, 8))
+    return animations
+
+
 def background_resource(
     *,
     name: str,
@@ -470,6 +503,10 @@ def actor(
     palette_name: str,
     script: list,
     update_script: list | None = None,
+    frame: int = 0,
+    animate: bool = True,
+    pinned: bool = False,
+    collision_group: str = "1",
 ) -> dict:
     return {
         "_resourceType": "actor",
@@ -481,16 +518,16 @@ def actor(
         "coordinateType": "tiles",
         "x": x,
         "y": y,
-        "frame": 0,
-        "animate": True,
+        "frame": frame,
+        "animate": animate,
         "spriteSheetId": uid(sprite_symbol),
         "paletteId": uid("palette-" + palette_name),
         "direction": "right",
         "moveSpeed": 1,
         "animSpeed": 15,
-        "isPinned": False,
+        "isPinned": pinned,
         "persistent": False,
-        "collisionGroup": "1",
+        "collisionGroup": collision_group,
         "collisionExtraFlags": [],
         "prefabScriptOverrides": {},
         "script": script,
@@ -579,6 +616,28 @@ def deactivate(name: str) -> dict:
     return event(name, "EVENT_ACTOR_DEACTIVATE", {"actorId": "$self$"})
 
 
+def set_number(name: str, variable: str, number: int) -> dict:
+    return event(
+        name,
+        "EVENT_SET_VALUE",
+        {"variable": variable, "value": {"type": "number", "value": number}},
+    )
+
+
+def if_value(name: str, variable: str, operator: str, comparator: int, true: list, false: list | None = None) -> dict:
+    args = {
+        "variable": variable,
+        "operator": operator,
+        "comparator": comparator,
+        "__collapseElse": false is None,
+    }
+    children = {"true": true}
+    if false is not None:
+        args["__collapseElse"] = False
+        children["false"] = false
+    return event(name, "EVENT_IF_VALUE", args, children)
+
+
 def switch_scene(name: str, scene_symbol: str, x: int, y: int) -> dict:
     return event(
         name,
@@ -621,10 +680,54 @@ def wait_frames(name: str, frames: int) -> dict:
     )
 
 
-def enemy_script() -> list:
+def enemy_update(suffix: str) -> list:
+    return [
+        move_by(f"{suffix}-move-right", 3),
+        wait_frames(f"{suffix}-wait-right", 20),
+        move_by(f"{suffix}-move-left", -3),
+        wait_frames(f"{suffix}-wait-left", 20),
+    ]
+
+
+def vanish_blob(suffix: str) -> list:
+    # Hide first so the sprite is gone even if deactivate ends the script.
+    return [
+        event(f"blob-hide-{suffix}", "EVENT_ACTOR_HIDE", {"actorId": "$self$"}),
+        event(
+            f"blob-nocol-{suffix}",
+            "EVENT_ACTOR_COLLISIONS_DISABLE",
+            {"actorId": "$self$"},
+        ),
+        event(f"blob-stop-{suffix}", "EVENT_ACTOR_STOP_UPDATE", {"actorId": "$self$"}),
+        beep(f"blob-stomp-sound-{suffix}", 6),
+        event(f"blob-bounce-{suffix}", "EVENT_PLAYER_BOUNCE", {"height": "medium"}),
+        deactivate(f"blob-stomp-hide-{suffix}"),
+    ]
+
+
+def enemy_script(suffix: str) -> list:
+    hurt = [
+        beep(f"{suffix}-hurt-sound", 2),
+        event(f"{suffix}-knockback", "EVENT_PLATFORMER_STATE_SET", {"state": "knockback"}),
+    ]
+    # Falling uses a positive Y velocity. A landing often overlaps the blob,
+    # so "player is above" alone misses the stomp.
+    falling = event(
+        f"{suffix}-if-falling",
+        "EVENT_IF",
+        {
+            "condition": {
+                "type": "gt",
+                "valueA": {"type": "engineField", "value": "plat_vel_y"},
+                "valueB": {"type": "number", "value": 0},
+            },
+            "__collapseElse": False,
+        },
+        {"true": vanish_blob(suffix + "-fall"), "false": hurt},
+    )
     return [
         event(
-            "blob-hit-if",
+            f"{suffix}-hit-if",
             "EVENT_IF_ACTOR_RELATIVE_TO_ACTOR",
             {
                 "actorId": "player",
@@ -632,27 +735,8 @@ def enemy_script() -> list:
                 "otherActorId": "$self$",
                 "__collapseElse": False,
             },
-            {
-                "true": [
-                    beep("blob-stomp-sound", 6),
-                    event("blob-bounce", "EVENT_PLAYER_BOUNCE", {"height": "medium"}),
-                    deactivate("blob-stomp-hide"),
-                ],
-                "false": [
-                    beep("blob-hurt-sound", 2),
-                    event("blob-knockback", "EVENT_PLATFORMER_STATE_SET", {"state": "knockback"}),
-                ],
-            },
+            {"true": vanish_blob(suffix + "-above"), "false": [falling]},
         )
-    ]
-
-
-def enemy_update() -> list:
-    return [
-        move_by("blob-move-right", 3),
-        wait_frames("blob-wait-right", 20),
-        move_by("blob-move-left", -3),
-        wait_frames("blob-wait-left", 20),
     ]
 
 
@@ -689,8 +773,67 @@ def exit_script() -> list:
     ]
 
 
+def respawn(name: str) -> list:
+    return [
+        event(
+            f"{name}-pos",
+            "EVENT_ACTOR_SET_POSITION",
+            {
+                "actorId": "player",
+                "x": {"type": "number", "value": PLAYER_START[0]},
+                "y": {"type": "number", "value": PLAYER_START[1]},
+                "units": "tiles",
+            },
+        ),
+        event(
+            f"{name}-vx",
+            "EVENT_ENGINE_FIELD_SET",
+            {"engineFieldKey": "plat_vel_x", "value": {"type": "number", "value": 0}},
+        ),
+        event(
+            f"{name}-vy",
+            "EVENT_ENGINE_FIELD_SET",
+            {"engineFieldKey": "plat_vel_y", "value": {"type": "number", "value": 0}},
+        ),
+        event(f"{name}-ground", "EVENT_PLATFORMER_STATE_SET", {"state": "ground"}),
+    ]
+
+
+def show_lives(name: str) -> dict:
+    return event(
+        name,
+        "EVENT_ACTOR_SET_FRAME",
+        {
+            "actorId": uid("actor_lives"),
+            "frame": {"type": "variable", "value": "1"},
+        },
+    )
+
+
 def pit_script(name: str) -> list:
-    return [switch_scene(name, "scene_level1_green_hills", PLAYER_START[0], PLAYER_START[1])]
+    # The trigger sits at the bottom of the gap, so this runs after the fall.
+    # The heart marker updates in place. A scene reload, used only at 0 lives,
+    # sets lives back to 3 and clears the stars.
+    return [
+        event(f"{name}-dec", "EVENT_DEC_VALUE", {"variable": "1"}),
+        show_lives(f"{name}-hearts"),
+        if_value(
+            f"{name}-dead",
+            "1",
+            "==",
+            0,
+            [
+                event(f"{name}-over", "EVENT_TEXT", {"text": "Game Over"}),
+                switch_scene(
+                    f"{name}-restart",
+                    "scene_level1_green_hills",
+                    PLAYER_START[0],
+                    PLAYER_START[1],
+                ),
+            ],
+            respawn(name),
+        ),
+    ]
 
 
 def build_images() -> dict[str, int]:
@@ -699,11 +842,13 @@ def build_images() -> dict[str, int]:
     player = paint_player()
     enemy = paint_enemy()
     star = paint_star()
+    lives = paint_lives()
     level, level_collisions = paint_level()
     clear, clear_collisions = paint_clear()
     write_png(sprites / "player_pink.png", 64, 16, player)
     write_png(sprites / "enemy_red_blob.png", 16, 16, enemy)
     write_png(sprites / "collectible_star.png", 16, 16, star)
+    write_png(sprites / "lives.png", 64, 16, lives)
     write_png(backgrounds / "level1_green_hills.png", LEVEL_W * 8, LEVEL_H * 8, level)
     write_png(backgrounds / "level1_clear.png", CLEAR_W * 8, CLEAR_H * 8, clear)
     return {
@@ -757,6 +902,20 @@ def build_resources(collisions: dict) -> None:
             animation_type="fixed",
             animations=fixed_animation("star"),
             num_tiles=2,
+        ),
+    )
+    write_json(
+        sprites / "lives.png.gbsres",
+        sprite_resource(
+            name="lives",
+            symbol="sprite_lives",
+            filename="lives.png",
+            image_path=sprites / "lives.png",
+            width=64,
+            height=16,
+            animation_type="fixed",
+            animations=lives_animations(),
+            num_tiles=8,
         ),
     )
     write_json(
@@ -836,36 +995,60 @@ def build_resources(collisions: dict) -> None:
             sprite_palette_ids=sprite_ids,
             script=[
                 event(
-                    "level-reset-powerups",
-                    "EVENT_SET_VALUE",
-                    {"variable": "0", "value": {"type": "number", "value": 0}},
-                )
+                    "level-music",
+                    "EVENT_MUSIC_PLAY",
+                    {"musicId": MUSIC_ID, "loop": True},
+                ),
+                set_number("level-reset-powerups", "0", 0),
+                set_number("level-reset-lives", "1", 3),
+                show_lives("level-hearts"),
             ],
             collisions=collisions["level_collisions"],
         ),
     )
     write_json(
-        level_dir / "actors" / "waddle_blob.gbsres",
+        level_dir / "actors" / "lives.gbsres",
         actor(
-            name="Waddle Blob",
-            symbol="actor_waddle_blob",
+            name="Lives",
+            symbol="actor_lives",
             index=0,
-            x=13,
-            y=MID_TOP - 2,
-            sprite_symbol="sprite_enemy_red_blob",
+            x=LIVES_AT[0],
+            y=LIVES_AT[1],
+            sprite_symbol="sprite_lives",
             palette_name="Blob Red",
-            script=enemy_script(),
-            update_script=enemy_update(),
+            script=[],
+            frame=3,
+            animate=False,
+            pinned=True,
+            collision_group="",
         ),
     )
-    star_positions = [(4, START_TOP - 5), (14, MID_TOP - 5), (21, LOW_TOP - 4)]
-    for index, (x, y) in enumerate(star_positions, start=1):
+    blobs = [
+        ("Waddle Blob", "actor_waddle_blob", "waddle_blob.gbsres", 1, BLOB_1, "blob1"),
+        ("Waddle Blob 2", "actor_waddle_blob_2", "waddle_blob_2.gbsres", 2, BLOB_2, "blob2"),
+    ]
+    for name, symbol, filename, index, (x, y), suffix in blobs:
+        write_json(
+            level_dir / "actors" / filename,
+            actor(
+                name=name,
+                symbol=symbol,
+                index=index,
+                x=x,
+                y=y,
+                sprite_symbol="sprite_enemy_red_blob",
+                palette_name="Blob Red",
+                script=enemy_script(suffix),
+                update_script=enemy_update(suffix),
+            ),
+        )
+    for index, (x, y) in enumerate(STARS, start=1):
         write_json(
             level_dir / "actors" / f"star_{index}.gbsres",
             actor(
                 name=f"Star {index}",
                 symbol=f"actor_star_{index}",
-                index=index,
+                index=index + 2,
                 x=x,
                 y=y,
                 sprite_symbol="sprite_collectible_star",
@@ -873,25 +1056,27 @@ def build_resources(collisions: dict) -> None:
                 script=star_script(index),
             ),
         )
+    exit_x, exit_y, exit_w, exit_h = EXIT_BOX
+    pit_x, pit_y, pit_w, pit_h = PIT_BOX
     write_json(
         level_dir / "triggers" / "exit.gbsres",
-        trigger("Exit", "trigger_exit", 0, 28, FINAL_TOP - 2, 3, 2, exit_script()),
+        trigger("Exit", "trigger_exit", 0, exit_x, exit_y, exit_w, exit_h, exit_script()),
     )
     write_json(
-        level_dir / "triggers" / "pit_left.gbsres",
-        trigger("Pit Left", "trigger_pit_left", 1, 8, 10, 2, 8, pit_script("pit-left")),
+        level_dir / "triggers" / "pit.gbsres",
+        trigger("Pit", "trigger_pit", 1, pit_x, pit_y, pit_w, pit_h, pit_script("pit")),
     )
-    write_json(
-        level_dir / "triggers" / "pit_right.gbsres",
-        trigger("Pit Right", "trigger_pit_right", 2, 18, 10, 2, 8, pit_script("pit-right")),
-    )
+    for stale in ("pit_left.gbsres", "pit_right.gbsres"):
+        stale_path = level_dir / "triggers" / stale
+        if stale_path.exists():
+            stale_path.unlink()
     write_json(
         clear_dir / "scene.gbsres",
         scene(
             name="Level 1 Clear",
             symbol="scene_level1_clear",
             index=1,
-            x=420,
+            x=CLEAR_SCENE_X,
             y=40,
             width=CLEAR_W,
             height=CLEAR_H,
@@ -910,7 +1095,7 @@ def patch_project() -> None:
         "_resourceType": "project",
         "name": "GrokBotPlatformer",
         "author": "Joe",
-        "notes": "Level 1 platformer for ModRetro Chromatic. Open in GB Studio 4.2 or newer.",
+        "notes": "Level 1 demo for ModRetro Chromatic. Open in GB Studio 4.2 or newer.",
         "_version": "4.2.0",
         "_release": "10",
     }
@@ -964,7 +1149,13 @@ def patch_project() -> None:
                     "name": "powerups",
                     "symbol": "var_powerups",
                     "type": "number",
-                }
+                },
+                {
+                    "id": "1",
+                    "name": "lives",
+                    "symbol": "var_lives",
+                    "type": "number",
+                },
             ],
             "constants": [],
         },
@@ -1003,6 +1194,7 @@ GB Studio reads every `.png` in this folder. The Level 1 sheets below are 16x16,
 | player_pink.png | Grok Bot, right-facing. Four frames: idle, walk A, walk B, jump. Left facing is mirrored. |
 | enemy_red_blob.png | Waddle Blob |
 | collectible_star.png | Power-up star |
+| lives.png | Four frames in one animation. Frame 0 is empty, then 1, 2, and 3 hearts. The pinned actor shows the frame that matches `lives`. |
 
 `actor.png`, `actor_animated.png`, and `static.png` are the GB Studio blank-template placeholders. The player setting points at `player_pink.png`.
 
@@ -1013,7 +1205,86 @@ Regenerate with `python3 scripts/build_level1.py`.
     (ROOT / "assets" / "sprites" / "README.md").write_text(text, encoding="utf-8")
 
 
+def required_rise(stand_y: int, actor_y: int) -> int:
+    """Pixels the player must rise before two 16px sprites overlap."""
+    return stand_y * 8 - (actor_y * 8 + 15)
+
+
+def validate_layout() -> None:
+    for x in range(PIT[0], PIT[1] + 1):
+        if solid_top(x) is not None:
+            raise SystemExit(f"pit column {x} is solid")
+    for x, y in (BLOB_1, BLOB_2):
+        if solid_top(x) != y + 2:
+            raise SystemExit(f"blob at {(x, y)} is not standing on a ledge")
+        if x - 3 < 0 or solid_top(x - 3) != y + 2 or solid_top(x + 3) != y + 2:
+            raise SystemExit(f"blob at {(x, y)} patrols off its ledge")
+    for x, y in STARS:
+        ground = solid_top(x)
+        if ground is None:
+            raise SystemExit(f"star at {(x, y)} is over the pit")
+        rise = required_rise(ground - 2, y)
+        if rise <= 0 or rise > 40:
+            raise SystemExit(f"star at {(x, y)} needs a {rise}px rise")
+    exit_x, exit_y, _exit_w, exit_h = EXIT_BOX
+    if exit_y + exit_h > solid_top(exit_x):
+        raise SystemExit("exit trigger overlaps the floor")
+    pit_x, pit_y, pit_w, _pit_h = PIT_BOX
+    if (pit_x, pit_x + pit_w - 1) != PIT or pit_y < FLOOR_TOP:
+        raise SystemExit("pit trigger is not at the bottom of the hole")
+    if solid_top(PLAYER_START[0]) != PLAYER_START[1] + 2:
+        raise SystemExit("player start is not standing on the floor")
+    landing = 0
+    for x in range(PIT[0] - 1, -1, -1):
+        if solid_top(x) != FLOOR_TOP:
+            break
+        landing += 1
+    if landing < 6:
+        raise SystemExit(f"only {landing} tiles of floor before the pit")
+    boxes = [BLOB_1, BLOB_2, *STARS]
+    for index, (x, y) in enumerate(boxes):
+        for other_x, other_y in boxes[index + 1 :]:
+            if abs(x - other_x) < 2 and abs(y - other_y) < 2:
+                raise SystemExit(f"actors overlap at {(x, y)} and {(other_x, other_y)}")
+
+
+def layout_rows() -> list[str]:
+    marks = {
+        PLAYER_START: "P",
+        BLOB_1: "A",
+        BLOB_2: "B",
+        LIVES_AT: "H",
+    }
+    for index, pos in enumerate(STARS, start=1):
+        marks[pos] = str(index)
+    exit_x, exit_y, exit_w, exit_h = EXIT_BOX
+    for dx in range(exit_w):
+        for dy in range(exit_h):
+            marks.setdefault((exit_x + dx, exit_y + dy), "E")
+    pit_x, pit_y, pit_w, pit_h = PIT_BOX
+    for dx in range(pit_w):
+        for dy in range(pit_h):
+            marks.setdefault((pit_x + dx, pit_y + dy), "V")
+    rows = []
+    for y in range(LEVEL_H):
+        chars = []
+        for x in range(LEVEL_W):
+            top = solid_top(x)
+            marker = marks.get((x, y))
+            if marker is not None and (top is None or y < top):
+                chars.append(marker)
+            elif top is None or y < top:
+                chars.append(" ")
+            elif y == top:
+                chars.append("=")
+            else:
+                chars.append("#")
+        rows.append("".join(chars))
+    return rows
+
+
 def main() -> None:
+    validate_layout()
     counts = build_images()
     build_resources(counts)
     patch_project()
@@ -1023,9 +1294,12 @@ def main() -> None:
         raise SystemExit("level collision size mismatch")
     if len(counts["clear_collisions"]) != CLEAR_W * CLEAR_H:
         raise SystemExit("clear collision size mismatch")
+    if counts["level_tiles"] != 3:
+        raise SystemExit(f"expected 3 background tiles, got {counts['level_tiles']}")
     print("Level 1 unique background tiles:", counts["level_tiles"])
     print("Clear screen unique background tiles:", counts["clear_tiles"])
     print("Player start tile:", PLAYER_START)
+    print("\n".join(layout_rows()))
     print("Wrote", ROOT / "GrokBotPlatformer.gbsproj")
 
 
