@@ -29,40 +29,102 @@ DIRT = (40, 144, 56, 255)
 OUTLINE = (24, 48, 40, 255)
 
 # Sprite colors. Index 0 is transparent (alpha 0).
-PINK = (248, 144, 196, 255)
-PINK_D = (192, 96, 152, 255)
+# Grok Bot is a round head, gray shade, and black capsule eyes.
+WHITE = (244, 244, 248, 255)
+GRAY = (138, 138, 152, 255)
 RED = (248, 72, 72, 255)
 RED_D = (160, 24, 24, 255)
-YELLOW = (248, 224, 48, 255)
-ORANGE = (224, 144, 16, 255)
+E_WHITE = (232, 248, 255, 255)
+CYAN = (80, 216, 248, 255)
+BLUE = (24, 72, 200, 255)
+SILVER = (216, 220, 232, 255)
+CHIP_BODY = (96, 104, 120, 255)
 BLACK = (24, 16, 24, 255)
 CLEAR = (0, 0, 0, 0)
 
-LEVEL_W = 68
+# Two scenes of 170 tiles. 340 tiles is five times the previous 68-tile run.
+# One scene cannot be wider than 255 tiles.
 LEVEL_H = 18
+SEG_W = 170
 CLEAR_W = 20
 CLEAR_H = 18
-
-# About 3.4 screens. One hole in the middle is the only pit.
-# Other height changes are solid all the way down, so the run has to jump.
 FLOOR_TOP = 15
-FLOOR = [(0, 31, FLOOR_TOP), (35, 67, FLOOR_TOP)]
-# The first ledge stops early so a running jump off it still lands before the pit.
-RAISED = [(16, 24, 12), (48, 67, 13)]
-PIT = (32, 34)
 PLAYER_START = (2, FLOOR_TOP - 2)
 CLEAR_TOP = 16
-MUSIC_ID = "f50428ab-a084-4591-9bba-2ba10fe7b1c6"
-
-# Sprite positions are the top-left tile. A 16px actor on a ledge uses y = top - 2.
-BLOB_1 = (20, 10)
-BLOB_2 = (52, 11)
-STARS = [(6, 10), (40, 9), (61, 8)]
-EXIT_BOX = (64, 11, 3, 2)
-PIT_BOX = (32, 15, 3, 3)
 LIVES_AT = (1, 0)
-# Level scene is 544px wide from x=80, so the clear scene starts past that.
-CLEAR_SCENE_X = 680
+MUSIC_ID = "f50428ab-a084-4591-9bba-2ba10fe7b1c6"
+BASE_JUMP = 14336
+CHIP_JUMP = 20480
+MAX_ACTORS = 20
+SCENE_GAP = 80
+
+
+def world_x(index: int) -> int:
+    return 80 + index * (SEG_W * 8 + SCENE_GAP)
+
+
+# A 16px actor standing on a surface uses y = top - 2.
+# Electrons sit in the air so each one is its own hop, like a coin.
+SEGMENTS = [
+    {
+        "key": "hills",
+        "name": "Level 1 Green Hills",
+        "symbol": "scene_level1_green_hills",
+        "folder": "level_1_green_hills",
+        "bg_symbol": "bg_level1_green_hills",
+        "bg_file": "level1_green_hills.png",
+        "index": 0,
+        "reset": True,
+        "floor": [(0, SEG_W - 1, FLOOR_TOP)],
+        "raised": [(20, 32, 12), (48, 58, 13), (90, 108, 12), (124, 140, 11), (150, 162, 13)],
+        "pits": [(70, 72)],
+        "blobs": [(26, 10), (40, 13), (53, 11), (99, 10), (116, 13), (156, 11)],
+        "electrons": [
+            (8, 10),
+            (14, 9),
+            (22, 7),
+            (29, 6),
+            (36, 10),
+            (50, 8),
+            (56, 7),
+            (84, 10),
+            (88, 8),
+            (94, 7),
+            (104, 6),
+        ],
+        "chip": (132, 9),
+        "next": "scene_level1_high_ridge",
+    },
+    {
+        "key": "ridge",
+        "name": "Level 1 High Ridge",
+        "symbol": "scene_level1_high_ridge",
+        "folder": "level_1_high_ridge",
+        "bg_symbol": "bg_level1_high_ridge",
+        "bg_file": "level1_high_ridge.png",
+        "index": 1,
+        "reset": False,
+        "floor": [(0, SEG_W - 1, FLOOR_TOP)],
+        "raised": [(16, 30, 12), (42, 54, 13), (74, 88, 12), (108, 122, 11), (136, 150, 13)],
+        "pits": [(62, 64)],
+        "blobs": [(23, 10), (36, 13), (48, 11), (81, 10), (100, 13), (115, 9), (143, 11)],
+        "electrons": [
+            (6, 10),
+            (10, 8),
+            (20, 7),
+            (27, 6),
+            (33, 9),
+            (52, 8),
+            (58, 10),
+            (78, 7),
+            (85, 6),
+            (112, 6),
+            (146, 8),
+        ],
+        "chip": None,
+        "next": None,
+    },
+]
 
 
 def uid(name: str) -> str:
@@ -187,13 +249,48 @@ def shift_frame(
 
 
 def paint_player() -> list[list[tuple[int, int, int, int]]]:
+    """Round Grok Bot: antenna, black capsule eyes, no mouth. Left side is mirrored."""
     image = blank(64, 16, CLEAR)
-    for frame, cy in enumerate((8.2, 9.2, 7.2, 6.2)):
-        origin = frame * 16
-        stamp_disk(image, origin, 8, cy, 6.3, PINK, PINK_D, BLACK)
-        stamp_eye(image, origin, 5.6, cy - 1.2, 1.7, 2.3, BLACK)
-        stamp_eye(image, origin, 10.4, cy - 1.2, 1.7, 2.3, BLACK)
+    # Idle, step down, idle, jump. Capsule eyes stay solid black.
+    for frame, dy in enumerate((0, 1, 0, -1)):
+        draw_grok_bot(image, frame * 16, dy)
     return image
+
+
+def draw_grok_bot(
+    image: list[list[tuple[int, int, int, int]]],
+    origin: int,
+    dy: int,
+) -> None:
+    cx, cy, radius = 8.0, 10.0 + dy, 5.2
+    limit = radius * radius
+    inner = (radius - 1.05) ** 2
+    for y in range(16):
+        for x in range(16):
+            dx = x + 0.5 - cx
+            ddy = y + 0.5 - cy
+            dist = dx * dx + ddy * ddy
+            if dist <= inner:
+                image[y][origin + x] = GRAY if ddy > 1.4 else WHITE
+            elif dist <= limit:
+                image[y][origin + x] = BLACK
+    for by in (dy, dy + 1):
+        for bx in (origin + 7, origin + 8):
+            if 0 <= by < 16:
+                image[by][bx] = BLACK
+    for ay in (dy + 2, dy + 3):
+        if 0 <= ay < 16:
+            image[ay][origin + 8] = BLACK
+    # Two black capsules with white on every side, so they stay separate.
+    eye_y = 8 + dy
+    for ey in range(2):
+        yy = eye_y + ey
+        if not 0 <= yy < 16:
+            continue
+        for x in range(4, 12):
+            image[yy][origin + x] = WHITE
+        for x in (5, 6, 9, 10):
+            image[yy][origin + x] = BLACK
 
 
 def paint_enemy() -> list[list[tuple[int, int, int, int]]]:
@@ -215,28 +312,48 @@ def paint_enemy() -> list[list[tuple[int, int, int, int]]]:
     return image
 
 
-def paint_star() -> list[list[tuple[int, int, int, int]]]:
-    # 16x16 star. y = yellow, o = orange, k = outline.
-    rows = [
-        "................",
-        ".......kk.......",
-        "......kyyk......",
-        "......kyyk......",
-        ".....kyyyyk.....",
-        ".kkkkyyyyyykkkk.",
-        "kkyyyyyyyyyyykk.",
-        ".kyyyyyoyyyyyk..",
-        "..kyyyyoyyyyk...",
-        "..kyyyyooyyk....",
-        "...kyyookk......",
-        "...kyykyyk......",
-        "..kyyk..kyyk....",
-        "..kyk....kyk....",
-        "...k......k.....",
-        "................",
-    ]
-    lookup = {".": CLEAR, "y": YELLOW, "o": ORANGE, "k": BLACK}
-    return [[lookup[ch] for ch in row] for row in rows]
+def paint_electron() -> list[list[tuple[int, int, int, int]]]:
+    """Small charged orb. The bar in the middle is the electron's minus."""
+    image = blank(16, 16, CLEAR)
+    radius = 4.3
+    for y in range(16):
+        for x in range(16):
+            dx = x + 0.5 - 8
+            dy = y + 0.5 - 8
+            dist = dx * dx + dy * dy
+            if dist <= 1.7 * 1.7:
+                image[y][x] = E_WHITE
+            elif dist <= (radius - 1.15) ** 2:
+                image[y][x] = CYAN
+            elif dist <= radius * radius:
+                image[y][x] = BLUE
+    for x in range(6, 10):
+        image[8][x] = BLUE
+    return image
+
+
+def paint_chip() -> list[list[tuple[int, int, int, int]]]:
+    """A silicon package: silver pins, dark body, black die."""
+    image = blank(16, 16, CLEAR)
+    for y in (5, 7, 9, 11):
+        for x in (1, 2, 13, 14):
+            image[y][x] = SILVER
+    for y in range(4, 13):
+        for x in range(3, 13):
+            image[y][x] = CHIP_BODY
+    for x in range(3, 13):
+        image[4][x] = BLACK
+        image[12][x] = BLACK
+    for y in range(4, 13):
+        image[y][3] = BLACK
+        image[y][12] = BLACK
+    for y in range(6, 11):
+        for x in range(6, 10):
+            image[y][x] = BLACK
+    image[7][7] = SILVER
+    image[7][8] = SILVER
+    image[8][7] = SILVER
+    return image
 
 
 def grass_tile() -> list[list[tuple[int, int, int, int]]]:
@@ -262,10 +379,11 @@ def sky_tile() -> list[list[tuple[int, int, int, int]]]:
     return [[SKY for _ in range(8)] for _ in range(8)]
 
 
-def solid_top(x: int) -> int | None:
-    if PIT[0] <= x <= PIT[1]:
-        return None
-    tops = [top for x0, x1, top in FLOOR + RAISED if x0 <= x <= x1]
+def solid_top(segment: dict, x: int) -> int | None:
+    for x0, x1 in segment["pits"]:
+        if x0 <= x <= x1:
+            return None
+    tops = [top for x0, x1, top in segment["floor"] + segment["raised"] if x0 <= x <= x1]
     if not tops:
         return None
     return min(tops)
@@ -287,21 +405,21 @@ def paint_lives() -> list[list[tuple[int, int, int, int]]]:
     return image
 
 
-def paint_level() -> tuple[list[list[tuple[int, int, int, int]]], list[int]]:
+def paint_segment(segment: dict) -> tuple[list[list[tuple[int, int, int, int]]], list[int]]:
     tiles = {0: sky_tile(), 1: grass_tile(), 2: dirt_tile()}
-    image = blank(LEVEL_W * 8, LEVEL_H * 8, SKY)
-    collisions = [0] * (LEVEL_W * LEVEL_H)
+    image = blank(SEG_W * 8, LEVEL_H * 8, SKY)
+    collisions = [0] * (SEG_W * LEVEL_H)
     for tile_y in range(LEVEL_H):
-        for tile_x in range(LEVEL_W):
-            top = solid_top(tile_x)
+        for tile_x in range(SEG_W):
+            top = solid_top(segment, tile_x)
             if top is None or tile_y < top:
                 kind = 0
             elif tile_y == top:
                 kind = 1
-                collisions[tile_y * LEVEL_W + tile_x] = 15
+                collisions[tile_y * SEG_W + tile_x] = 15
             else:
                 kind = 2
-                collisions[tile_y * LEVEL_W + tile_x] = 15
+                collisions[tile_y * SEG_W + tile_x] = 15
             pattern = tiles[kind]
             for py in range(8):
                 for px in range(8):
@@ -740,83 +858,74 @@ def enemy_script(suffix: str) -> list:
     ]
 
 
-def star_script(index: int) -> list:
+def set_engine(name: str, key: str, number: int) -> dict:
+    return event(
+        name,
+        "EVENT_ENGINE_FIELD_SET",
+        {"engineFieldKey": key, "value": {"type": "number", "value": number}},
+    )
+
+
+def electron_script(name: str) -> list:
     return [
-        event("star-inc-" + str(index), "EVENT_INC_VALUE", {"variable": "0"}),
-        beep(f"star-sound-{index}", 7),
-        deactivate(f"star-hide-{index}"),
+        event(f"{name}-inc", "EVENT_INC_VALUE", {"variable": "0"}),
+        beep(f"{name}-sound", 7),
+        deactivate(f"{name}-hide"),
+    ]
+
+
+def chip_script(name: str) -> list:
+    # Overclock: a higher jump for the rest of the run. Scene 1 init puts it back.
+    return [
+        set_number(f"{name}-flag", "2", 1),
+        set_engine(f"{name}-jump", "plat_jump_vel", CHIP_JUMP),
+        beep(f"{name}-sound", 10),
+        deactivate(f"{name}-hide"),
     ]
 
 
 def exit_script() -> list:
-    return [
-        event(
-            "exit-if",
-            "EVENT_IF_VALUE",
-            {
-                "variable": "0",
-                "operator": ">=",
-                "comparator": 3,
-                "__collapseElse": False,
-            },
-            {
-                "true": [switch_scene("exit-clear", "scene_level1_clear", 2, CLEAR_TOP - 2)],
-                "false": [
-                    event(
-                        "exit-need-more",
-                        "EVENT_TEXT",
-                        {"text": "Need more power-ups!"},
-                    )
-                ],
-            },
-        )
-    ]
+    return [switch_scene("exit-clear", "scene_level1_clear", 2, CLEAR_TOP - 2)]
 
 
-def respawn(name: str) -> list:
+def respawn(name: str, x: int, y: int) -> list:
     return [
         event(
             f"{name}-pos",
             "EVENT_ACTOR_SET_POSITION",
             {
                 "actorId": "player",
-                "x": {"type": "number", "value": PLAYER_START[0]},
-                "y": {"type": "number", "value": PLAYER_START[1]},
+                "x": {"type": "number", "value": x},
+                "y": {"type": "number", "value": y},
                 "units": "tiles",
             },
         ),
-        event(
-            f"{name}-vx",
-            "EVENT_ENGINE_FIELD_SET",
-            {"engineFieldKey": "plat_vel_x", "value": {"type": "number", "value": 0}},
-        ),
-        event(
-            f"{name}-vy",
-            "EVENT_ENGINE_FIELD_SET",
-            {"engineFieldKey": "plat_vel_y", "value": {"type": "number", "value": 0}},
-        ),
+        set_engine(f"{name}-vx", "plat_vel_x", 0),
+        set_engine(f"{name}-vy", "plat_vel_y", 0),
         event(f"{name}-ground", "EVENT_PLATFORMER_STATE_SET", {"state": "ground"}),
     ]
 
 
-def show_lives(name: str) -> dict:
+def show_lives(name: str, actor_symbol: str) -> dict:
     return event(
         name,
         "EVENT_ACTOR_SET_FRAME",
         {
-            "actorId": uid("actor_lives"),
+            "actorId": uid(actor_symbol),
             "frame": {"type": "variable", "value": "1"},
         },
     )
 
 
-def pit_script(name: str) -> list:
+def pit_script(name: str, segment: dict) -> list:
     # The trigger sits at the bottom of the gap, so this runs after the fall.
-    # The heart marker updates in place. A scene reload, used only at 0 lives,
-    # sets lives back to 3 and clears the stars.
+    # Hearts update in place. Only a game over reloads, and it reloads scene 1
+    # so lives, electrons, and the chip jump all start over.
+    lives_symbol = f"actor_lives_{segment['key']}"
+    start_x, start_y = PLAYER_START
     return [
         event(f"{name}-dec", "EVENT_DEC_VALUE", {"variable": "1"}),
-        show_lives(f"{name}-hearts"),
+        show_lives(f"{name}-hearts", lives_symbol),
         if_value(
             f"{name}-dead",
             "1",
@@ -824,51 +933,208 @@ def pit_script(name: str) -> list:
             0,
             [
                 event(f"{name}-over", "EVENT_TEXT", {"text": "Game Over"}),
-                switch_scene(
-                    f"{name}-restart",
-                    "scene_level1_green_hills",
-                    PLAYER_START[0],
-                    PLAYER_START[1],
-                ),
+                switch_scene(f"{name}-restart", "scene_level1_green_hills", start_x, start_y),
             ],
-            respawn(name),
+            respawn(name, start_x, start_y),
         ),
     ]
 
 
-def build_images() -> dict[str, int]:
+def segment_init(segment: dict) -> list:
+    lives_symbol = f"actor_lives_{segment['key']}"
+    script = [
+        event(
+            f"{segment['key']}-music",
+            "EVENT_MUSIC_PLAY",
+            {"musicId": MUSIC_ID, "loop": True},
+        )
+    ]
+    if segment["reset"]:
+        script.extend(
+            [
+                set_number(f"{segment['key']}-electrons", "0", 0),
+                set_number(f"{segment['key']}-lives", "1", 3),
+                set_number(f"{segment['key']}-chip", "2", 0),
+                set_engine(f"{segment['key']}-jump", "plat_jump_vel", BASE_JUMP),
+            ]
+        )
+    script.append(show_lives(f"{segment['key']}-hearts", lives_symbol))
+    return script
+
+
+def build_images() -> dict:
     sprites = ROOT / "assets" / "sprites"
     backgrounds = ROOT / "assets" / "backgrounds"
-    player = paint_player()
-    enemy = paint_enemy()
-    star = paint_star()
-    lives = paint_lives()
-    level, level_collisions = paint_level()
+    write_png(sprites / "player_grok.png", 64, 16, paint_player())
+    write_png(sprites / "enemy_red_blob.png", 16, 16, paint_enemy())
+    write_png(sprites / "electron.png", 16, 16, paint_electron())
+    write_png(sprites / "silicon_chip.png", 16, 16, paint_chip())
+    write_png(sprites / "lives.png", 64, 16, paint_lives())
+    for stale in (
+        "player_pink.png",
+        "player_pink.png.gbsres",
+        "collectible_star.png",
+        "collectible_star.png.gbsres",
+    ):
+        path = sprites / stale
+        if path.exists():
+            path.unlink()
+    painted = {}
+    for segment in SEGMENTS:
+        image, collisions = paint_segment(segment)
+        write_png(backgrounds / segment["bg_file"], SEG_W * 8, LEVEL_H * 8, image)
+        painted[segment["symbol"]] = {
+            "tiles": unique_tiles(image),
+            "collisions": collisions,
+        }
     clear, clear_collisions = paint_clear()
-    write_png(sprites / "player_pink.png", 64, 16, player)
-    write_png(sprites / "enemy_red_blob.png", 16, 16, enemy)
-    write_png(sprites / "collectible_star.png", 16, 16, star)
-    write_png(sprites / "lives.png", 64, 16, lives)
-    write_png(backgrounds / "level1_green_hills.png", LEVEL_W * 8, LEVEL_H * 8, level)
     write_png(backgrounds / "level1_clear.png", CLEAR_W * 8, CLEAR_H * 8, clear)
-    return {
-        "level_tiles": unique_tiles(level),
-        "clear_tiles": unique_tiles(clear),
-        "level_collisions": level_collisions,
-        "clear_collisions": clear_collisions,
-    }
+    painted["clear"] = {"tiles": unique_tiles(clear), "collisions": clear_collisions}
+    return painted
+
+
+def delete_gbsres(path: Path) -> None:
+    if path.exists():
+        for child in path.glob("*.gbsres"):
+            child.unlink()
+
+
+def write_segment(
+    segment: dict,
+    collisions: list[int],
+    bg_ids: list[str],
+    sprite_ids: list[str],
+) -> None:
+    level_dir = ROOT / "project" / "scenes" / segment["folder"]
+    actor_dir = level_dir / "actors"
+    trigger_dir = level_dir / "triggers"
+    delete_gbsres(actor_dir)
+    delete_gbsres(trigger_dir)
+    key = segment["key"]
+    write_json(
+        level_dir / "scene.gbsres",
+        scene(
+            name=segment["name"],
+            symbol=segment["symbol"],
+            index=segment["index"],
+            x=world_x(segment["index"]),
+            y=40,
+            width=SEG_W,
+            height=LEVEL_H,
+            background_symbol=segment["bg_symbol"],
+            palette_ids=bg_ids,
+            sprite_palette_ids=sprite_ids,
+            script=segment_init(segment),
+            collisions=collisions,
+        ),
+    )
+    next_index = 1
+    write_json(
+        actor_dir / "lives.gbsres",
+        actor(
+            name="Lives",
+            symbol=f"actor_lives_{key}",
+            index=0,
+            x=LIVES_AT[0],
+            y=LIVES_AT[1],
+            sprite_symbol="sprite_lives",
+            palette_name="Blob Red",
+            script=[],
+            frame=3,
+            animate=False,
+            pinned=True,
+            collision_group="",
+        ),
+    )
+    for index, (x, y) in enumerate(segment["blobs"], start=1):
+        suffix = f"{key}-blob{index}"
+        write_json(
+            actor_dir / f"blob_{index}.gbsres",
+            actor(
+                name=f"Waddle Blob {index}",
+                symbol=f"actor_{suffix}",
+                index=next_index,
+                x=x,
+                y=y,
+                sprite_symbol="sprite_enemy_red_blob",
+                palette_name="Blob Red",
+                script=enemy_script(suffix),
+                update_script=enemy_update(suffix),
+            ),
+        )
+        next_index += 1
+    for index, (x, y) in enumerate(segment["electrons"], start=1):
+        suffix = f"{key}-electron{index}"
+        write_json(
+            actor_dir / f"electron_{index}.gbsres",
+            actor(
+                name=f"Electron {index}",
+                symbol=f"actor_{suffix}",
+                index=next_index,
+                x=x,
+                y=y,
+                sprite_symbol="sprite_electron",
+                palette_name="Electron Blue",
+                script=electron_script(suffix),
+            ),
+        )
+        next_index += 1
+    if segment["chip"] is not None:
+        chip_x, chip_y = segment["chip"]
+        suffix = f"{key}-chip"
+        write_json(
+            actor_dir / "silicon_chip.gbsres",
+            actor(
+                name="Silicon Chip",
+                symbol=f"actor_{suffix}",
+                index=next_index,
+                x=chip_x,
+                y=chip_y,
+                sprite_symbol="sprite_silicon_chip",
+                palette_name="Chip Gray",
+                script=chip_script(suffix),
+            ),
+        )
+    trigger_index = 0
+    for pit_index, (x0, x1) in enumerate(segment["pits"], start=1):
+        write_json(
+            trigger_dir / f"pit_{pit_index}.gbsres",
+            trigger(
+                f"Pit {pit_index}",
+                f"trigger_pit_{key}_{pit_index}",
+                trigger_index,
+                x0,
+                FLOOR_TOP,
+                x1 - x0 + 1,
+                3,
+                pit_script(f"{key}-pit{pit_index}", segment),
+            ),
+        )
+        trigger_index += 1
+    gate_script = (
+        [switch_scene(f"{key}-continue", segment["next"], PLAYER_START[0], PLAYER_START[1])]
+        if segment["next"]
+        else exit_script()
+    )
+    gate_name = "Continue" if segment["next"] else "Exit"
+    gate_symbol = f"trigger_continue_{key}" if segment["next"] else "trigger_exit"
+    gate_file = "continue.gbsres" if segment["next"] else "exit.gbsres"
+    write_json(
+        trigger_dir / gate_file,
+        trigger(gate_name, gate_symbol, trigger_index, SEG_W - 4, 9, 4, 6, gate_script),
+    )
 
 
 def build_resources(collisions: dict) -> None:
     sprites = ROOT / "assets" / "sprites"
     backgrounds = ROOT / "assets" / "backgrounds"
     write_json(
-        sprites / "player_pink.png.gbsres",
+        sprites / "player_grok.png.gbsres",
         sprite_resource(
-            name="player_pink",
-            symbol="sprite_player_pink",
-            filename="player_pink.png",
-            image_path=sprites / "player_pink.png",
+            name="player_grok",
+            symbol="sprite_player_grok",
+            filename="player_grok.png",
+            image_path=sprites / "player_grok.png",
             width=64,
             height=16,
             animation_type="platform_player",
@@ -891,16 +1157,30 @@ def build_resources(collisions: dict) -> None:
         ),
     )
     write_json(
-        sprites / "collectible_star.png.gbsres",
+        sprites / "electron.png.gbsres",
         sprite_resource(
-            name="collectible_star",
-            symbol="sprite_collectible_star",
-            filename="collectible_star.png",
-            image_path=sprites / "collectible_star.png",
+            name="electron",
+            symbol="sprite_electron",
+            filename="electron.png",
+            image_path=sprites / "electron.png",
             width=16,
             height=16,
             animation_type="fixed",
-            animations=fixed_animation("star"),
+            animations=fixed_animation("electron"),
+            num_tiles=2,
+        ),
+    )
+    write_json(
+        sprites / "silicon_chip.png.gbsres",
+        sprite_resource(
+            name="silicon_chip",
+            symbol="sprite_silicon_chip",
+            filename="silicon_chip.png",
+            image_path=sprites / "silicon_chip.png",
+            width=16,
+            height=16,
+            animation_type="fixed",
+            animations=fixed_animation("chip"),
             num_tiles=2,
         ),
     )
@@ -918,16 +1198,17 @@ def build_resources(collisions: dict) -> None:
             num_tiles=8,
         ),
     )
-    write_json(
-        backgrounds / "level1_green_hills.png.gbsres",
-        background_resource(
-            name="level1_green_hills",
-            symbol="bg_level1_green_hills",
-            filename="level1_green_hills.png",
-            tiles_x=LEVEL_W,
-            tiles_y=LEVEL_H,
-        ),
-    )
+    for segment in SEGMENTS:
+        write_json(
+            backgrounds / f"{segment['bg_file']}.gbsres",
+            background_resource(
+                name=segment["bg_file"].replace(".png", ""),
+                symbol=segment["bg_symbol"],
+                filename=segment["bg_file"],
+                tiles_x=SEG_W,
+                tiles_y=LEVEL_H,
+            ),
+        )
     write_json(
         backgrounds / "level1_clear.png.gbsres",
         background_resource(
@@ -945,17 +1226,25 @@ def build_resources(collisions: dict) -> None:
         palette("Green Hills", ["B8F0E8", "68D070", "289038", "183028"]),
     )
     write_json(
-        palettes / "grok_pink.gbsres",
-        palette("Grok Pink", ["F8F8F8", "F890C4", "C06098", "181018"]),
+        palettes / "grok_bot.gbsres",
+        palette("Grok Bot", ["F8F8F8", "F4F4F8", "8A8A98", "181018"]),
     )
     write_json(
         palettes / "blob_red.gbsres",
         palette("Blob Red", ["F8F8F8", "F84848", "A01818", "181018"]),
     )
     write_json(
-        palettes / "star_yellow.gbsres",
-        palette("Star Yellow", ["F8F8F8", "F8E030", "E09010", "181018"]),
+        palettes / "electron_blue.gbsres",
+        palette("Electron Blue", ["F8F8F8", "E8F8FF", "50D8F8", "1848C8"]),
     )
+    write_json(
+        palettes / "chip_gray.gbsres",
+        palette("Chip Gray", ["F8F8F8", "D8DCE8", "606878", "181018"]),
+    )
+    for stale in ("grok_pink.gbsres", "star_yellow.gbsres"):
+        path = palettes / stale
+        if path.exists():
+            path.unlink()
 
     bg_ids = [
         uid("palette-Green Hills"),
@@ -968,115 +1257,25 @@ def build_resources(collisions: dict) -> None:
         "default-ui",
     ]
     sprite_ids = [
-        uid("palette-Grok Pink"),
+        uid("palette-Grok Bot"),
         uid("palette-Blob Red"),
-        uid("palette-Star Yellow"),
-        "default-sprite",
+        uid("palette-Electron Blue"),
+        uid("palette-Chip Gray"),
         "default-sprite",
         "default-sprite",
         "default-sprite",
         "default-sprite",
     ]
 
-    level_dir = ROOT / "project" / "scenes" / "level_1_green_hills"
-    clear_dir = ROOT / "project" / "scenes" / "level_1_clear"
+    for segment in SEGMENTS:
+        write_segment(segment, collisions[segment["symbol"]]["collisions"], bg_ids, sprite_ids)
     write_json(
-        level_dir / "scene.gbsres",
-        scene(
-            name="Level 1 Green Hills",
-            symbol="scene_level1_green_hills",
-            index=0,
-            x=80,
-            y=40,
-            width=LEVEL_W,
-            height=LEVEL_H,
-            background_symbol="bg_level1_green_hills",
-            palette_ids=bg_ids,
-            sprite_palette_ids=sprite_ids,
-            script=[
-                event(
-                    "level-music",
-                    "EVENT_MUSIC_PLAY",
-                    {"musicId": MUSIC_ID, "loop": True},
-                ),
-                set_number("level-reset-powerups", "0", 0),
-                set_number("level-reset-lives", "1", 3),
-                show_lives("level-hearts"),
-            ],
-            collisions=collisions["level_collisions"],
-        ),
-    )
-    write_json(
-        level_dir / "actors" / "lives.gbsres",
-        actor(
-            name="Lives",
-            symbol="actor_lives",
-            index=0,
-            x=LIVES_AT[0],
-            y=LIVES_AT[1],
-            sprite_symbol="sprite_lives",
-            palette_name="Blob Red",
-            script=[],
-            frame=3,
-            animate=False,
-            pinned=True,
-            collision_group="",
-        ),
-    )
-    blobs = [
-        ("Waddle Blob", "actor_waddle_blob", "waddle_blob.gbsres", 1, BLOB_1, "blob1"),
-        ("Waddle Blob 2", "actor_waddle_blob_2", "waddle_blob_2.gbsres", 2, BLOB_2, "blob2"),
-    ]
-    for name, symbol, filename, index, (x, y), suffix in blobs:
-        write_json(
-            level_dir / "actors" / filename,
-            actor(
-                name=name,
-                symbol=symbol,
-                index=index,
-                x=x,
-                y=y,
-                sprite_symbol="sprite_enemy_red_blob",
-                palette_name="Blob Red",
-                script=enemy_script(suffix),
-                update_script=enemy_update(suffix),
-            ),
-        )
-    for index, (x, y) in enumerate(STARS, start=1):
-        write_json(
-            level_dir / "actors" / f"star_{index}.gbsres",
-            actor(
-                name=f"Star {index}",
-                symbol=f"actor_star_{index}",
-                index=index + 2,
-                x=x,
-                y=y,
-                sprite_symbol="sprite_collectible_star",
-                palette_name="Star Yellow",
-                script=star_script(index),
-            ),
-        )
-    exit_x, exit_y, exit_w, exit_h = EXIT_BOX
-    pit_x, pit_y, pit_w, pit_h = PIT_BOX
-    write_json(
-        level_dir / "triggers" / "exit.gbsres",
-        trigger("Exit", "trigger_exit", 0, exit_x, exit_y, exit_w, exit_h, exit_script()),
-    )
-    write_json(
-        level_dir / "triggers" / "pit.gbsres",
-        trigger("Pit", "trigger_pit", 1, pit_x, pit_y, pit_w, pit_h, pit_script("pit")),
-    )
-    for stale in ("pit_left.gbsres", "pit_right.gbsres"):
-        stale_path = level_dir / "triggers" / stale
-        if stale_path.exists():
-            stale_path.unlink()
-    write_json(
-        clear_dir / "scene.gbsres",
+        ROOT / "project" / "scenes" / "level_1_clear" / "scene.gbsres",
         scene(
             name="Level 1 Clear",
             symbol="scene_level1_clear",
-            index=1,
-            x=CLEAR_SCENE_X,
+            index=len(SEGMENTS),
+            x=world_x(len(SEGMENTS)),
             y=40,
             width=CLEAR_W,
             height=CLEAR_H,
@@ -1084,7 +1283,7 @@ def build_resources(collisions: dict) -> None:
             palette_ids=bg_ids,
             sprite_palette_ids=sprite_ids,
             script=[event("clear-text", "EVENT_TEXT", {"text": "Level 1 clear!"})],
-            collisions=collisions["clear_collisions"],
+            collisions=collisions["clear"]["collisions"],
         ),
     )
 
@@ -1095,7 +1294,7 @@ def patch_project() -> None:
         "_resourceType": "project",
         "name": "GrokBotPlatformer",
         "author": "Joe",
-        "notes": "Level 1 demo for ModRetro Chromatic. Open in GB Studio 4.2 or newer.",
+        "notes": "Level 1 is two scenes, about five times the first demo. Open in GB Studio 4.2 or newer.",
         "_version": "4.2.0",
         "_release": "10",
     }
@@ -1112,21 +1311,21 @@ def patch_project() -> None:
 
     settings_path = ROOT / "project" / "settings.gbsres"
     settings = json.loads(settings_path.read_text())
-    player_id = uid("sprite_player_pink")
+    player_id = uid("sprite_player_grok")
     settings["colorMode"] = "color"
     settings["startSceneId"] = uid("scene_level1_green_hills")
     settings["startX"] = PLAYER_START[0]
     settings["startY"] = PLAYER_START[1]
     settings["startDirection"] = "right"
     settings["defaultSceneTypeId"] = "PLATFORM"
-    settings["playerPaletteId"] = uid("palette-Grok Pink")
-    settings["defaultSpritePaletteId"] = uid("palette-Grok Pink")
+    settings["playerPaletteId"] = uid("palette-Grok Bot")
+    settings["defaultSpritePaletteId"] = uid("palette-Grok Bot")
     settings["defaultBackgroundPaletteIds"][0] = uid("palette-Green Hills")
     settings["defaultSpritePaletteIds"] = [
-        uid("palette-Grok Pink"),
+        uid("palette-Grok Bot"),
         uid("palette-Blob Red"),
-        uid("palette-Star Yellow"),
-        "default-sprite",
+        uid("palette-Electron Blue"),
+        uid("palette-Chip Gray"),
         "default-sprite",
         "default-sprite",
         "default-sprite",
@@ -1146,14 +1345,20 @@ def patch_project() -> None:
             "variables": [
                 {
                     "id": "0",
-                    "name": "powerups",
-                    "symbol": "var_powerups",
+                    "name": "electrons",
+                    "symbol": "var_electrons",
                     "type": "number",
                 },
                 {
                     "id": "1",
                     "name": "lives",
                     "symbol": "var_lives",
+                    "type": "number",
+                },
+                {
+                    "id": "2",
+                    "name": "chip",
+                    "symbol": "var_chip",
                     "type": "number",
                 },
             ],
@@ -1191,12 +1396,13 @@ GB Studio reads every `.png` in this folder. The Level 1 sheets below are 16x16,
 
 | File | Use |
 |------|-----|
-| player_pink.png | Grok Bot, right-facing. Four frames: idle, walk A, walk B, jump. Left facing is mirrored. |
+| player_grok.png | Grok Bot. Round head, antenna, black capsule eyes, no mouth. Four frames: idle, walk A, walk B, jump. Left facing is mirrored. |
 | enemy_red_blob.png | Waddle Blob |
-| collectible_star.png | Power-up star |
+| electron.png | Coin-sized electron. Touching it adds one to `electrons`. |
+| silicon_chip.png | One power-up. Collecting it raises the jump for the rest of the run. |
 | lives.png | Four frames in one animation. Frame 0 is empty, then 1, 2, and 3 hearts. The pinned actor shows the frame that matches `lives`. |
 
-`actor.png`, `actor_animated.png`, and `static.png` are the GB Studio blank-template placeholders. The player setting points at `player_pink.png`.
+`actor.png`, `actor_animated.png`, and `static.png` are the GB Studio blank-template placeholders. The player setting points at `player_grok.png`.
 
 Other shapes from the character-select design (heart, star, teardrop, and the rest) are not drawn yet. Palette swaps for those shapes come after this level is playable.
 
@@ -1211,65 +1417,81 @@ def required_rise(stand_y: int, actor_y: int) -> int:
 
 
 def validate_layout() -> None:
-    for x in range(PIT[0], PIT[1] + 1):
-        if solid_top(x) is not None:
-            raise SystemExit(f"pit column {x} is solid")
-    for x, y in (BLOB_1, BLOB_2):
-        if solid_top(x) != y + 2:
-            raise SystemExit(f"blob at {(x, y)} is not standing on a ledge")
-        if x - 3 < 0 or solid_top(x - 3) != y + 2 or solid_top(x + 3) != y + 2:
-            raise SystemExit(f"blob at {(x, y)} patrols off its ledge")
-    for x, y in STARS:
-        ground = solid_top(x)
-        if ground is None:
-            raise SystemExit(f"star at {(x, y)} is over the pit")
-        rise = required_rise(ground - 2, y)
-        if rise <= 0 or rise > 40:
-            raise SystemExit(f"star at {(x, y)} needs a {rise}px rise")
-    exit_x, exit_y, _exit_w, exit_h = EXIT_BOX
-    if exit_y + exit_h > solid_top(exit_x):
-        raise SystemExit("exit trigger overlaps the floor")
-    pit_x, pit_y, pit_w, _pit_h = PIT_BOX
-    if (pit_x, pit_x + pit_w - 1) != PIT or pit_y < FLOOR_TOP:
-        raise SystemExit("pit trigger is not at the bottom of the hole")
-    if solid_top(PLAYER_START[0]) != PLAYER_START[1] + 2:
-        raise SystemExit("player start is not standing on the floor")
-    landing = 0
-    for x in range(PIT[0] - 1, -1, -1):
-        if solid_top(x) != FLOOR_TOP:
-            break
-        landing += 1
-    if landing < 6:
-        raise SystemExit(f"only {landing} tiles of floor before the pit")
-    boxes = [BLOB_1, BLOB_2, *STARS]
-    for index, (x, y) in enumerate(boxes):
-        for other_x, other_y in boxes[index + 1 :]:
-            if abs(x - other_x) < 2 and abs(y - other_y) < 2:
-                raise SystemExit(f"actors overlap at {(x, y)} and {(other_x, other_y)}")
+    total_electrons = 0
+    total_blobs = 0
+    for segment in SEGMENTS:
+        label = segment["name"]
+        bodies = list(segment["blobs"]) + list(segment["electrons"])
+        if segment["chip"] is not None:
+            bodies.append(segment["chip"])
+        actor_count = 1 + len(bodies)
+        if actor_count > MAX_ACTORS:
+            raise SystemExit(f"{label} has {actor_count} actors; the limit is {MAX_ACTORS}")
+        for x0, x1 in segment["pits"]:
+            for x in range(x0, x1 + 1):
+                if solid_top(segment, x) is not None:
+                    raise SystemExit(f"{label} pit column {x} is solid")
+            landing = 0
+            for x in range(x0 - 1, -1, -1):
+                if solid_top(segment, x) != FLOOR_TOP:
+                    break
+                landing += 1
+            if landing < 6:
+                raise SystemExit(f"{label} has only {landing} tiles of floor before the pit")
+        for x, y in segment["blobs"]:
+            if solid_top(segment, x) != y + 2:
+                raise SystemExit(f"{label} blob at {(x, y)} is not standing on a ledge")
+            if x - 3 < 0 or solid_top(segment, x - 3) != y + 2 or solid_top(segment, x + 3) != y + 2:
+                raise SystemExit(f"{label} blob at {(x, y)} patrols off its ledge")
+        for x, y in segment["electrons"]:
+            ground = solid_top(segment, x)
+            if ground is None:
+                raise SystemExit(f"{label} electron at {(x, y)} is over a pit")
+            rise = required_rise(ground - 2, y)
+            if rise <= 0 or rise > 40:
+                raise SystemExit(f"{label} electron at {(x, y)} needs a {rise}px rise")
+        if segment["chip"] is not None:
+            chip_x, chip_y = segment["chip"]
+            ground = solid_top(segment, chip_x)
+            if ground is None or chip_y + 1 >= ground:
+                raise SystemExit(f"{label} chip is buried")
+            if ground - FLOOR_TOP > 4:
+                raise SystemExit(f"{label} chip ledge is too high for the base jump")
+        if solid_top(segment, PLAYER_START[0]) != PLAYER_START[1] + 2:
+            raise SystemExit(f"{label} start is not on the floor")
+        gate_x = SEG_W - 4
+        if solid_top(segment, gate_x) != FLOOR_TOP:
+            raise SystemExit(f"{label} gate is not on the floor")
+        for index, (x, y) in enumerate(bodies):
+            for other_x, other_y in bodies[index + 1 :]:
+                if abs(x - other_x) < 2 and abs(y - other_y) < 2:
+                    raise SystemExit(f"{label} actors overlap at {(x, y)} and {(other_x, other_y)}")
+        total_electrons += len(segment["electrons"])
+        total_blobs += len(segment["blobs"])
+    if total_electrons < 20 or total_blobs < 10:
+        raise SystemExit(f"expected a longer cast, got {total_electrons} electrons and {total_blobs} blobs")
 
 
-def layout_rows() -> list[str]:
-    marks = {
-        PLAYER_START: "P",
-        BLOB_1: "A",
-        BLOB_2: "B",
-        LIVES_AT: "H",
-    }
-    for index, pos in enumerate(STARS, start=1):
-        marks[pos] = str(index)
-    exit_x, exit_y, exit_w, exit_h = EXIT_BOX
-    for dx in range(exit_w):
-        for dy in range(exit_h):
-            marks.setdefault((exit_x + dx, exit_y + dy), "E")
-    pit_x, pit_y, pit_w, pit_h = PIT_BOX
-    for dx in range(pit_w):
-        for dy in range(pit_h):
-            marks.setdefault((pit_x + dx, pit_y + dy), "V")
+def layout_rows(segment: dict) -> list[str]:
+    marks = {PLAYER_START: "P", LIVES_AT: "H"}
+    for x, y in segment["blobs"]:
+        marks[(x, y)] = "B"
+    for x, y in segment["electrons"]:
+        marks[(x, y)] = "e"
+    if segment["chip"] is not None:
+        marks[segment["chip"]] = "C"
+    for dx in range(4):
+        for dy in range(6):
+            marks.setdefault((SEG_W - 4 + dx, 9 + dy), "E")
+    for x0, x1 in segment["pits"]:
+        for x in range(x0, x1 + 1):
+            for y in range(FLOOR_TOP, FLOOR_TOP + 3):
+                marks.setdefault((x, y), "V")
     rows = []
     for y in range(LEVEL_H):
         chars = []
-        for x in range(LEVEL_W):
-            top = solid_top(x)
+        for x in range(SEG_W):
+            top = solid_top(segment, x)
             marker = marks.get((x, y))
             if marker is not None and (top is None or y < top):
                 chars.append(marker)
@@ -1285,21 +1507,23 @@ def layout_rows() -> list[str]:
 
 def main() -> None:
     validate_layout()
-    counts = build_images()
-    build_resources(counts)
+    painted = build_images()
+    build_resources(painted)
     patch_project()
     write_sprite_readme()
-    level_collisions = counts["level_collisions"]
-    if len(level_collisions) != LEVEL_W * LEVEL_H:
-        raise SystemExit("level collision size mismatch")
-    if len(counts["clear_collisions"]) != CLEAR_W * CLEAR_H:
+    for segment in SEGMENTS:
+        info = painted[segment["symbol"]]
+        if len(info["collisions"]) != SEG_W * LEVEL_H:
+            raise SystemExit(f"{segment['name']} collision size mismatch")
+        if info["tiles"] != 3:
+            raise SystemExit(f"{segment['name']} has {info['tiles']} background tiles")
+        actors = 1 + len(segment["blobs"]) + len(segment["electrons"]) + (segment["chip"] is not None)
+        print(f"{segment['name']}: {SEG_W} tiles, {actors} actors, {info['tiles']} background tiles")
+        print("\n".join(layout_rows(segment)))
+    if len(painted["clear"]["collisions"]) != CLEAR_W * CLEAR_H:
         raise SystemExit("clear collision size mismatch")
-    if counts["level_tiles"] != 3:
-        raise SystemExit(f"expected 3 background tiles, got {counts['level_tiles']}")
-    print("Level 1 unique background tiles:", counts["level_tiles"])
-    print("Clear screen unique background tiles:", counts["clear_tiles"])
-    print("Player start tile:", PLAYER_START)
-    print("\n".join(layout_rows()))
+    print("Electrons:", sum(len(segment["electrons"]) for segment in SEGMENTS))
+    print("Blobs:", sum(len(segment["blobs"]) for segment in SEGMENTS))
     print("Wrote", ROOT / "GrokBotPlatformer.gbsproj")
 
 

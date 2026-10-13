@@ -14,18 +14,19 @@ Scaffolded GB Studio platformer for the ModRetro Chromatic.
 ## Play Level 1
 Open `GrokBotPlatformer.gbsproj` in GB Studio 4.2 or newer and press Play.
 
-Level 1 – Green Hills is about three screens wide. A normal clear, with the jumps and stomps, is long enough to record a 15 second clip.
+Level 1 is two scenes and 340 tiles wide, about five times the previous run. Green Hills leads straight into High Ridge. A full clear is a few minutes, not a 15 second clip.
 
-- Pink Grok Bot with idle, walk, and jump frames. Left facing is mirrored.
-- Two Waddle Blobs. Stomping one hides it and bounces you. Touching one from the side knocks you back.
-- Three stars at different heights. The exit on the right opens after `powerups` reaches 3.
-- You start with 3 lives, shown as hearts in the top-left. The one pit in the middle costs a life when you reach the bottom, then puts you back at the start. There is no pause for the life count. Stars you already collected stay collected, and a blob you already stomped stays gone. At 0 lives the scene says "Game Over" and restarts.
-- The template song starts with the level.
-- Clearing the exit loads a small “Level 1 clear!” scene.
+- Grok Bot is a round head with an antenna and black capsule eyes. Left facing is mirrored.
+- Thirteen Waddle Blobs. Stomping one hides it and bounces you. Touching one from the side knocks you back.
+- Twenty-two electrons, picked up like coins. Each one adds to `electrons`. You do not need all of them to finish.
+- One silicon chip, on a ledge in Green Hills. Collecting it raises the jump from 3.5 to 5 for the rest of the run.
+- You start with 3 lives, shown as hearts in the top-left. Each half has one pit. Falling to the bottom costs a life and puts you back at the start of that half, without pausing. Electrons you already collected stay collected, and a blob you already stomped stays gone. At 0 lives the scene says "Game Over" and restarts from the beginning.
+- The template song starts again at the beginning of each half.
+- The exit at the end of High Ridge loads a small “Level 1 clear!” scene.
 
-Jump feel is set in `project/engine_field_values.gbsres`: jump velocity 3.5, a slightly lower hold-gravity, coyote time, and jump buffering. See `docs/PLATFORMER_PLUS.md`.
+Jump feel is set in `project/engine_field_values.gbsres`: jump velocity 3.5, a slightly lower hold-gravity, coyote time, and jump buffering. The chip raises `plat_jump_vel` to 20480 until a game over. See `docs/PLATFORMER_PLUS.md`.
 
-The background uses 3 unique tiles. One screen shows the player, the hearts, and at most one blob and one star.
+The background uses 3 unique tiles. One screen shows the player, the hearts, and at most one blob plus a couple of electrons.
 
 `python3 scripts/build_level1.py` regenerates the level art, scenes, and those settings. It does not remove the GB Studio template fonts or UI.
 
@@ -34,9 +35,10 @@ Fonts, the dialogue frame, emotes, and the placeholder `actor*.png` sprites come
 ## Assets
 Level 1 sheets are in `assets/sprites/`:
 
-- `player_pink.png`
+- `player_grok.png`
 - `enemy_red_blob.png`
-- `collectible_star.png`
+- `electron.png`
+- `silicon_chip.png`
 - `lives.png`
 
 Shape and color variants from `docs/CHARACTER_SELECTION.md` are not in the project yet.
