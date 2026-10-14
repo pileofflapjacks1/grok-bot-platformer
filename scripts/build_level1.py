@@ -24,8 +24,11 @@ NS = uuid.UUID("6f1b9c3e-8a24-4b7e-9c1d-0a5e2f7b4d11")
 
 # Background palette. Four opaque colors, one 8x8 pattern each.
 SKY = (184, 240, 232, 255)
-GRASS_L = (104, 208, 112, 255)
-DIRT = (40, 144, 56, 255)
+# GB Studio indexes background pixels by green channel (tileDataIndexFn in
+# src/shared/lib/tiles/tileData.ts): 205+ is color 0, 130+ is 1, 65+ is 2,
+# and the rest is 3. These PNG shades only pick the slot; the palette sets the color.
+GRASS_L = (104, 176, 112, 255)
+DIRT = (40, 104, 56, 255)
 OUTLINE = (24, 48, 40, 255)
 
 # Sprite colors. GB Studio does not use these RGB values directly.
@@ -43,9 +46,9 @@ SILVER = (216, 220, 232, 255)
 CHIP_BODY = (96, 104, 120, 255)
 BLACK = (24, 16, 24, 255)
 CREAM = (248, 232, 208, 255)
-CLOUD = (248, 252, 255, 255)
-HILL = (112, 192, 216, 255)
-HILL_SHADE = (40, 112, 144, 255)
+CLOUD = (232, 200, 240, 255)
+HILL = (112, 120, 216, 255)
+HILL_SHADE = (40, 56, 144, 255)
 CLEAR = (0, 0, 0, 0)
 # Far background palette. Color 0 matches the ground palette's sky.
 FAR = [SKY, CLOUD, HILL, HILL_SHADE]
@@ -94,7 +97,7 @@ SEGMENTS = [
         "floor": [(0, SEG_W - 1, FLOOR_TOP)],
         "raised": [(20, 32, 12), (48, 58, 13), (90, 108, 12), (124, 140, 11), (150, 162, 13)],
         "pits": [(70, 72)],
-        "blobs": [(26, 10), (40, 13), (53, 11), (99, 10), (116, 13), (156, 11)],
+        "blobs": [(16, 13), (40, 13), (53, 11), (99, 10), (116, 13), (156, 11)],
         "electrons": [
             (8, 10),
             (14, 9),
@@ -729,7 +732,7 @@ def unique_tiles(image: list[list[tuple[int, int, int, int]]], tile: int = 8) ->
     return len(seen)
 
 
-def tile_ref(name: str, x: int, slice_x: int) -> dict:
+def tile_ref(name: str, x: int, slice_x: int, palette_index: int = 0) -> dict:
     return {
         "id": uid(name),
         "x": x,
@@ -739,18 +742,25 @@ def tile_ref(name: str, x: int, slice_x: int) -> dict:
         "flipX": False,
         "flipY": False,
         "palette": 0,
-        "paletteIndex": 0,
+        "paletteIndex": palette_index,
         "objPalette": "OBP0",
         "priority": False,
     }
 
 
+# Scene sprite palette slots. In color mode GB Studio 4 reads the palette
+# from each sprite tile's paletteIndex (compileSprites.ts makeProps), not from
+# the actor's paletteId. Slot 0 is Grok Bot; the picker color swaps slot 0.
+SLOT = {"enemy": 1, "lives": 1, "electron": 2, "ammo": 2, "chip": 3}
+
+
 def frame_of(name: str, slice_x: int) -> dict:
+    palette_index = SLOT.get(name.split("-")[0], 0)
     return {
         "id": uid(name),
         "tiles": [
-            tile_ref(name + "-l", 0, slice_x),
-            tile_ref(name + "-r", 8, slice_x + 8),
+            tile_ref(name + "-l", 0, slice_x, palette_index),
+            tile_ref(name + "-r", 8, slice_x + 8, palette_index),
         ],
     }
 
