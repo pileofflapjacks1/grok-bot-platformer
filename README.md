@@ -14,6 +14,8 @@ Scaffolded GB Studio platformer for the ModRetro Chromatic.
 ## Play Level 1
 Open `GrokBotPlatformer.gbsproj` in GB Studio 4.2 or newer and press Play.
 
+Boot flow: Title ("GROK BOT", PRESS START) → Picker → Level 1. Start or A leaves the title right away. On the picker, Left/Right switches round or square head, Up/Down cycles white, red, yellow, teal, and A starts. The default is round + white, so Start, A gets you playing. The choice is kept through pits and Game Over (which restarts Level 1, not the picker). After "Level 1 clear!" a button press returns to the title.
+
 Level 1 is two scenes and 340 tiles wide, about five times the previous run. Green Hills leads straight into High Ridge. A full clear is a few minutes, not a 15 second clip.
 
 - Grok Bot is a round head with an antenna and black capsule eyes. Left facing is mirrored.
@@ -23,7 +25,7 @@ Level 1 is two scenes and 340 tiles wide, about five times the previous run. Gre
 - One silicon chip, on the ground a few steps from the start of Green Hills. The electrons are after it. Collect the chip before the shots will fire. Until then, the run button only runs. Each shot spends one electron. The jump stays at 3.5.
 - You start with 3 lives. The top-left badge is a black square with a red heart and that number. Each half has one pit. Falling in shakes the screen, fades out, costs a life, and fades back in at the start of that half. Electrons you already collected stay collected, and a blob you already removed stays gone. At 0 lives the screen fades back in, says "Game Over", and restarts from the beginning, which clears the ammo, the chip, and the hit count.
 - The template song starts again at the beginning of each half.
-- The exit at the end of High Ridge loads a small “Level 1 clear!” scene.
+- The exit at the end of High Ridge loads a small “Level 1 clear!” scene, then the title.
 
 Jump feel is set in `project/engine_field_values.gbsres`: jump velocity 3.5, a slightly lower hold-gravity, coyote time, and jump buffering. See `docs/PLATFORMER_PLUS.md`.
 
@@ -43,11 +45,14 @@ Level 1 sheets are in `assets/sprites/`:
 - `lives.png`
 - `ammo.png`
 
-Shape and color variants from `docs/CHARACTER_SELECTION.md` are not in the project yet.
+- `player_grok_square.png` (square-head variant for the picker)
+- `press_start.png` (title text)
+
+Two of the shapes and four colors from `docs/CHARACTER_SELECTION.md` are in the picker.
 
 ## Next Steps
 1. Pull this project on the test computer, open it in GB Studio, and record a normal-speed clear.
-2. Add the shape and color select flow from `docs/CHARACTER_SELECTION.md`.
+2. Add the remaining shapes from `docs/CHARACTER_SELECTION.md` to the picker.
 3. Build Level 2 from `docs/ROADMAP.md`.
 4. Audit with `docs/HARDWARE_CHECKLIST.md` before the scenes get bigger.
 
