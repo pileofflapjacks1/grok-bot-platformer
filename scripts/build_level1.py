@@ -281,6 +281,7 @@ def draw_grok_bot(
     image: list[list[tuple[int, int, int, int]]],
     origin: int,
     dy: int,
+    square: bool = False,
 ) -> None:
     cx, cy, radius = 8.0, 10.0 + dy, 5.2
     limit = radius * radius
@@ -289,6 +290,13 @@ def draw_grok_bot(
         for x in range(16):
             dx = x + 0.5 - cx
             ddy = y + 0.5 - cy
+            if square:
+                # Same footprint as the round head: x 3-12, y 5-14 (shifted by dy).
+                if not (3 <= x <= 12 and 5 + dy <= y <= 14 + dy):
+                    continue
+                edge = x in (3, 12) or y in (5 + dy, 14 + dy)
+                image[y][origin + x] = BLACK if edge else (GRAY if ddy > 1.4 else WHITE)
+                continue
             dist = dx * dx + ddy * ddy
             if dist <= inner:
                 image[y][origin + x] = GRAY if ddy > 1.4 else WHITE
@@ -311,6 +319,14 @@ def draw_grok_bot(
             image[yy][origin + x] = WHITE
         for x in (5, 6, 9, 10):
             image[yy][origin + x] = BLACK
+
+
+def paint_player_square() -> list[list[tuple[int, int, int, int]]]:
+    """Square-head Grok Bot: same antenna, capsule eyes, and frames as the round one."""
+    image = blank(64, 16, CLEAR)
+    for frame, dy in enumerate((0, 1, 0, -1)):
+        draw_grok_bot(image, frame * 16, dy, square=True)
+    return image
 
 
 def paint_enemy() -> list[list[tuple[int, int, int, int]]]:
@@ -812,22 +828,24 @@ def sprite_resource(
     }
 
 
-def player_animations() -> list[dict]:
+def player_animations(prefix: str = "") -> list[dict]:
     # Engine slots: idle R, idle L, jump R, jump L, move R, move L, climb, spare.
     # Left-facing slots stay empty because flipLeft mirrors the right-facing art.
-    idle = frame_of("player-idle", 0)
-    walk_a = frame_of("player-walk-a", 16)
-    walk_b = frame_of("player-walk-b", 32)
-    jump = frame_of("player-jump", 48)
+    # The round sheet keeps its original ids; the square sheet adds a prefix.
+    p = prefix + "player"
+    idle = frame_of(f"{p}-idle", 0)
+    walk_a = frame_of(f"{p}-walk-a", 16)
+    walk_b = frame_of(f"{p}-walk-b", 32)
+    jump = frame_of(f"{p}-jump", 48)
     return [
-        {"id": uid("player-anim-idle"), "frames": [idle]},
-        empty_frame("player-anim-idle-left"),
-        {"id": uid("player-anim-jump"), "frames": [jump]},
-        empty_frame("player-anim-jump-left"),
-        {"id": uid("player-anim-move"), "frames": [walk_a, walk_b]},
-        empty_frame("player-anim-move-left"),
-        {"id": uid("player-anim-climb"), "frames": [idle]},
-        empty_frame("player-anim-spare"),
+        {"id": uid(f"{p}-anim-idle"), "frames": [idle]},
+        empty_frame(f"{p}-anim-idle-left"),
+        {"id": uid(f"{p}-anim-jump"), "frames": [jump]},
+        empty_frame(f"{p}-anim-jump-left"),
+        {"id": uid(f"{p}-anim-move"), "frames": [walk_a, walk_b]},
+        empty_frame(f"{p}-anim-move-left"),
+        {"id": uid(f"{p}-anim-climb"), "frames": [idle]},
+        empty_frame(f"{p}-anim-spare"),
     ]
 
 
@@ -973,12 +991,13 @@ def scene(
     script: list,
     collisions: list[int],
     parallax: list | None = None,
+    scene_type: str = "PLATFORM",
 ) -> dict:
     data = {
         "_resourceType": "scene",
         "id": uid(symbol),
         "_index": index,
-        "type": "PLATFORM",
+        "type": scene_type,
         "name": name,
         "symbol": symbol,
         "x": x,
@@ -1400,6 +1419,7 @@ def segment_init(segment: dict) -> list:
                 set_engine(f"{key}-jump", "plat_jump_vel", BASE_JUMP),
             ]
         )
+    script.extend(apply_player_choice(key))
     script.append(show_lives(f"{key}-hearts", lives_symbol))
     script.append(show_ammo(f"{key}-ammo", ammo_symbol))
     script.append(attach_fire(segment))
@@ -1415,6 +1435,8 @@ def build_images() -> dict:
     backgrounds = ROOT / "assets" / "backgrounds"
     ammo_frames = electron_total() + 1
     write_png(sprites / "player_grok.png", 64, 16, paint_player())
+    write_png(sprites / "player_grok_square.png", 64, 16, paint_player_square())
+    write_png(sprites / "press_start.png", PRESS_FRAMES * 16, 16, paint_press_start())
     write_png(sprites / "enemy_red_blob.png", 32, 16, paint_enemy())
     write_png(sprites / "electron.png", 16, 16, paint_electron())
     write_png(sprites / "silicon_chip.png", 16, 16, paint_chip())
@@ -1445,6 +1467,14 @@ def build_images() -> dict:
         "collisions": clear_collisions,
         "colors": clear_colors,
     }
+    for key, painter in (("title", paint_title), ("picker", paint_picker)):
+        image, menu_collisions, menu_colors = painter()
+        write_png(backgrounds / f"{key}.png", CLEAR_W * 8, CLEAR_H * 8, image)
+        painted[key] = {
+            "tiles": unique_tiles(image),
+            "collisions": menu_collisions,
+            "colors": menu_colors,
+        }
     return painted
 
 
@@ -1676,6 +1706,46 @@ def build_resources(collisions: dict) -> None:
             num_tiles=8,
         ),
     )
+    write_json(
+        sprites / "player_grok_square.png.gbsres",
+        sprite_resource(
+            name="player_grok_square",
+            symbol="sprite_player_grok_square",
+            filename="player_grok_square.png",
+            image_path=sprites / "player_grok_square.png",
+            width=64,
+            height=16,
+            animation_type="platform_player",
+            animations=player_animations("square-"),
+            num_tiles=8,
+        ),
+    )
+    write_json(
+        sprites / "press_start.png.gbsres",
+        sprite_resource(
+            name="press_start",
+            symbol="sprite_press_start",
+            filename="press_start.png",
+            image_path=sprites / "press_start.png",
+            width=PRESS_FRAMES * 16,
+            height=16,
+            animation_type="fixed",
+            animations=frames_animation("press", PRESS_FRAMES),
+            num_tiles=PRESS_FRAMES * 2,
+        ),
+    )
+    for key in ("title", "picker"):
+        write_json(
+            backgrounds / f"{key}.png.gbsres",
+            background_resource(
+                name=key,
+                symbol=f"bg_{key}",
+                filename=f"{key}.png",
+                tiles_x=CLEAR_W,
+                tiles_y=CLEAR_H,
+                tile_colors=collisions[key]["colors"],
+            ),
+        )
     ammo_frames = electron_total() + 1
     write_json(
         sprites / "ammo.png.gbsres",
@@ -1740,6 +1810,13 @@ def build_resources(collisions: dict) -> None:
         palettes / "chip_gray.gbsres",
         palette("Chip Gray", ["F8F8F8", "D8DCE8", "606878", "181018"]),
     )
+    for name, colors in GROK_COLORS[1:]:
+        write_json(palettes / f"{name.lower().replace(' ', '_')}.gbsres", palette(name, colors))
+    for name, color in DOTS:
+        write_json(
+            palettes / f"{name.lower().replace(' ', '_')}.gbsres",
+            palette(name, ["B8F0E8", color, "70C0D8", "183028"]),
+        )
     for stale in ("grok_pink.gbsres", "star_yellow.gbsres"):
         path = palettes / stale
         if path.exists():
@@ -1781,8 +1858,315 @@ def build_resources(collisions: dict) -> None:
             background_symbol="bg_level1_clear",
             palette_ids=bg_ids,
             sprite_palette_ids=sprite_ids,
-            script=[event("clear-text", "EVENT_TEXT", {"text": "Level 1 clear!"})],
+            script=[
+                event("clear-text", "EVENT_TEXT", {"text": "Level 1 clear!"}),
+                wait_frames("clear-wait", 30),
+                switch_scene("clear-to-title", "scene_title", *MENU_PLAYER),
+            ],
             collisions=collisions["clear"]["collisions"],
+        ),
+    )
+    write_menus(collisions, bg_ids, sprite_ids)
+
+
+# Title and picker. Variables 6 and 7 hold the picker choice and are never
+# reset by Level 1, so the choice survives pits, Game Over, and a clear.
+SHAPE_VAR = "6"
+COLOR_VAR = "7"
+# The menus hide the player and lock its movement, so where it starts does not matter.
+MENU_PLAYER = (1, 1)
+GROK_COLORS = [
+    ("Grok Bot", ["F8F8F8", "F4F4F8", "8A8A98", "181018"]),
+    ("Grok Red", ["F8F8F8", "F85050", "A82020", "181018"]),
+    ("Grok Yellow", ["F8F8F8", "F8E040", "B08810", "181018"]),
+    ("Grok Teal", ["F8F8F8", "40D8C8", "107868", "181018"]),
+]
+DOTS = [
+    ("Dot White", "F8F8F8"),
+    ("Dot Red", "F84848"),
+    ("Dot Yellow", "F8D830"),
+    ("Dot Teal", "30C8B8"),
+]
+SHAPES = ["sprite_player_grok", "sprite_player_grok_square"]
+PRESS_TEXT = "PRESS START "
+PRESS_FRAMES = len(PRESS_TEXT) // 2
+PRESS_AT = (4, 11)
+TITLE_BOT_AT = (9, CLEAR_TOP - 2)
+PICKER_BOT_AT = (9, 8)
+
+GLYPHS = {
+    "A": ("01110", "10001", "10001", "11111", "10001", "10001", "10001"),
+    "B": ("11110", "10001", "10001", "11110", "10001", "10001", "11110"),
+    "E": ("11111", "10000", "10000", "11110", "10000", "10000", "11111"),
+    "G": ("01110", "10001", "10000", "10111", "10001", "10001", "01111"),
+    "K": ("10001", "10010", "10100", "11000", "10100", "10010", "10001"),
+    "O": ("01110", "10001", "10001", "10001", "10001", "10001", "01110"),
+    "P": ("11110", "10001", "10001", "11110", "10000", "10000", "10000"),
+    "R": ("11110", "10001", "10001", "11110", "10100", "10010", "10001"),
+    "S": ("01111", "10000", "10000", "01110", "00001", "00001", "11110"),
+    "T": ("11111", "00100", "00100", "00100", "00100", "00100", "00100"),
+    "=": ("00000", "00000", "11111", "00000", "11111", "00000", "00000"),
+    "<": ("00010", "00110", "01110", "11110", "01110", "00110", "00010"),
+    ">": ("01000", "01100", "01110", "01111", "01110", "01100", "01000"),
+    " ": ("00000",) * 7,
+}
+DOT_TILE = (
+    "00000000",
+    "00111100",
+    "01111110",
+    "01111110",
+    "01111110",
+    "01111110",
+    "00111100",
+    "00000000",
+)
+
+
+def draw_text(image, px: int, py: int, text: str, color, scale: int = 1) -> None:
+    """Each character fills one 8px cell per scale step: a 5x7 glyph, offset (1, 0)."""
+    for index, char in enumerate(text):
+        for y, row in enumerate(GLYPHS[char]):
+            for x, bit in enumerate(row):
+                if bit != "1":
+                    continue
+                for sy in range(scale):
+                    for sx in range(scale):
+                        image[py + y * scale + sy][px + index * 8 * scale + (1 + x) * scale + sx] = color
+
+
+def paint_menu_base():
+    # The Green Hills sky and floor: clouds, far hills, grass.
+    image, collisions, colors = paint_level(CLEAR_W, CLEAR_H, lambda tile_x: CLEAR_TOP)
+    # Menus have no platforming. Clear collisions so nothing can catch the hidden player.
+    return image, [0] * len(collisions), colors
+
+
+def paint_title():
+    image, collisions, colors = paint_menu_base()
+    draw_text(image, 2 * 8, 4 * 8, "GROK BOT", OUTLINE, 2)
+    return image, collisions, colors
+
+
+def paint_picker():
+    image, collisions, colors = paint_menu_base()
+    arrow_y = (PICKER_BOT_AT[1] + 1) * 8
+    draw_text(image, (PICKER_BOT_AT[0] - 3) * 8, arrow_y, "<", OUTLINE)
+    draw_text(image, (PICKER_BOT_AT[0] + 4) * 8, arrow_y, ">", OUTLINE)
+    draw_text(image, 7 * 8, 14 * 8, "A = GO", OUTLINE)
+    dot = indexed_tile(DOT_TILE, FAR)
+    for index, tile_x in enumerate((5, 8, 11, 14)):
+        tile_y = 12
+        for y in range(8):
+            for x in range(8):
+                image[tile_y * 8 + y][tile_x * 8 + x] = dot[y][x]
+        # Background palette slots 2-5 are the four dot palettes.
+        colors[tile_y * CLEAR_W + tile_x] = 2 + index
+    return image, collisions, colors
+
+
+def paint_press_start() -> list[list[tuple[int, int, int, int]]]:
+    image = blank(PRESS_FRAMES * 16, 16, CLEAR)
+    draw_text(image, 0, 4, PRESS_TEXT, BLACK)
+    return image
+
+
+def palette_set(name: str, palette_name: str) -> dict:
+    args = {f"palette{index}": "keep" for index in range(8)}
+    args["palette0"] = uid("palette-" + palette_name)
+    return event(name, "EVENT_PALETTE_SET_SPRITE", args)
+
+
+def color_events(name: str) -> list:
+    # Sprite palette slot 0 is Grok Bot's. Each color replaces that slot.
+    return [
+        if_value(f"{name}-color{index}", COLOR_VAR, "==", index, [palette_set(f"{name}-palette{index}", pal)])
+        for index, (pal, _colors) in enumerate(GROK_COLORS)
+    ]
+
+
+def apply_player_choice(key: str) -> list:
+    """Level init: square head when player_shape is 1, then the chosen palette."""
+    return [
+        if_value(
+            f"{key}-shape-square",
+            SHAPE_VAR,
+            "==",
+            1,
+            [
+                event(
+                    f"{key}-set-square",
+                    "EVENT_PLAYER_SET_SPRITE",
+                    {"spriteSheetId": uid(SHAPES[1])},
+                )
+            ],
+        ),
+        *color_events(f"{key}-choice"),
+    ]
+
+
+def preview(tag: str) -> list:
+    bot = uid("actor_picker_bot")
+    sprite = [
+        event(f"pick-{tag}-sprite{index}", "EVENT_ACTOR_SET_SPRITE", {"actorId": bot, "spriteSheetId": uid(symbol)})
+        for index, symbol in enumerate(SHAPES)
+    ]
+    return [
+        if_value(f"pick-{tag}-shape", SHAPE_VAR, "==", 1, [sprite[1]], [sprite[0]]),
+        *color_events(f"pick-{tag}"),
+    ]
+
+
+def input_script(name: str, buttons: list[str], body: list) -> dict:
+    return event(name, "EVENT_SET_INPUT_SCRIPT", {"input": buttons, "override": True}, {"true": body})
+
+
+def hide_player(name: str) -> dict:
+    return event(name, "EVENT_ACTOR_HIDE", {"actorId": "player"})
+
+
+def lock_dpad(name: str) -> list:
+    return [input_script(f"{name}-lock-{button}", [button], []) for button in ("left", "right", "up", "down")]
+
+
+def title_script() -> list:
+    return [
+        hide_player("title-hide-player"),
+        *lock_dpad("title"),
+        # Bound first, so Start or A works before the blink or the song.
+        input_script(
+            "title-start",
+            ["start", "a"],
+            [switch_scene("title-to-picker", "scene_picker", *MENU_PLAYER)],
+        ),
+        event("title-music", "EVENT_MUSIC_PLAY", {"musicId": MUSIC_ID, "loop": True}),
+    ]
+
+
+def picker_script() -> list:
+    start_x, start_y = PLAYER_START
+    toggle = [
+        if_value(
+            "pick-shape-flip",
+            SHAPE_VAR,
+            "==",
+            0,
+            [set_number("pick-shape-to-1", SHAPE_VAR, 1)],
+            [set_number("pick-shape-to-0", SHAPE_VAR, 0)],
+        ),
+        beep("pick-shape-sound", 6),
+        *preview("shape"),
+    ]
+    up = [
+        event("pick-color-inc", "EVENT_INC_VALUE", {"variable": COLOR_VAR}),
+        if_value("pick-color-wrap", COLOR_VAR, ">", 3, [set_number("pick-color-to-0", COLOR_VAR, 0)]),
+        beep("pick-up-sound", 7),
+        *preview("up"),
+    ]
+    down = [
+        if_value(
+            "pick-color-under",
+            COLOR_VAR,
+            "==",
+            0,
+            [set_number("pick-color-to-3", COLOR_VAR, 3)],
+            [event("pick-color-dec", "EVENT_DEC_VALUE", {"variable": COLOR_VAR})],
+        ),
+        beep("pick-down-sound", 7),
+        *preview("down"),
+    ]
+    go = [switch_scene("pick-go", "scene_level1_green_hills", start_x, start_y)]
+    return [
+        hide_player("pick-hide-player"),
+        input_script("pick-go-input", ["a", "start"], go),
+        input_script("pick-left-right", ["left", "right"], toggle),
+        input_script("pick-up", ["up"], up),
+        input_script("pick-down", ["down"], down),
+        # Show the current choice: round + white on a fresh boot.
+        *preview("init"),
+    ]
+
+
+def write_menus(painted: dict, bg_ids: list[str], sprite_ids: list[str]) -> None:
+    scenes_dir = ROOT / "project" / "scenes"
+    picker_bg_ids = bg_ids[:2] + [uid("palette-" + name) for name, _color in DOTS] + bg_ids[6:]
+    base_x = world_x(len(SEGMENTS) + 1)
+    for key, script, palettes, x in (
+        ("title", title_script(), bg_ids, base_x),
+        ("picker", picker_script(), picker_bg_ids, base_x + CLEAR_W * 8 + SCENE_GAP),
+    ):
+        delete_gbsres(scenes_dir / key / "actors")
+        write_json(
+            scenes_dir / key / "scene.gbsres",
+            scene(
+                name=key.title(),
+                symbol=f"scene_{key}",
+                index=len(SEGMENTS) + (1 if key == "title" else 2),
+                x=x,
+                y=40,
+                width=CLEAR_W,
+                height=CLEAR_H,
+                background_symbol=f"bg_{key}",
+                palette_ids=palettes,
+                sprite_palette_ids=sprite_ids,
+                script=script,
+                collisions=painted[key]["collisions"],
+                scene_type="TOPDOWN",
+            ),
+        )
+    title_actors = scenes_dir / "title" / "actors"
+    write_json(
+        title_actors / "grok_bot.gbsres",
+        actor(
+            name="Grok Bot",
+            symbol="actor_title_bot",
+            index=0,
+            x=TITLE_BOT_AT[0],
+            y=TITLE_BOT_AT[1],
+            sprite_symbol=SHAPES[0],
+            palette_name="Grok Bot",
+            script=[],
+            animate=False,
+            collision_group="",
+        ),
+    )
+    press = [uid(f"actor_title_press_{index}") for index in range(PRESS_FRAMES)]
+    blink = [
+        wait_frames("blink-on", 36),
+        *[event(f"blink-hide-{index}", "EVENT_ACTOR_HIDE", {"actorId": actor_id}) for index, actor_id in enumerate(press)],
+        wait_frames("blink-off", 18),
+        *[event(f"blink-show-{index}", "EVENT_ACTOR_SHOW", {"actorId": actor_id}) for index, actor_id in enumerate(press)],
+    ]
+    for index in range(PRESS_FRAMES):
+        write_json(
+            title_actors / f"press_start_{index}.gbsres",
+            actor(
+                name=f"Press Start {index}",
+                symbol=f"actor_title_press_{index}",
+                index=1 + index,
+                x=PRESS_AT[0] + index * 2,
+                y=PRESS_AT[1],
+                sprite_symbol="sprite_press_start",
+                palette_name="Grok Bot",
+                script=[],
+                update_script=blink if index == 0 else None,
+                frame=index,
+                animate=False,
+                collision_group="",
+            ),
+        )
+    write_json(
+        scenes_dir / "picker" / "actors" / "grok_bot.gbsres",
+        actor(
+            name="Picker Bot",
+            symbol="actor_picker_bot",
+            index=0,
+            x=PICKER_BOT_AT[0],
+            y=PICKER_BOT_AT[1],
+            sprite_symbol=SHAPES[0],
+            palette_name="Grok Bot",
+            script=[],
+            animate=False,
+            collision_group="",
         ),
     )
 
@@ -1812,9 +2196,9 @@ def patch_project() -> None:
     settings = json.loads(settings_path.read_text())
     player_id = uid("sprite_player_grok")
     settings["colorMode"] = "color"
-    settings["startSceneId"] = uid("scene_level1_green_hills")
-    settings["startX"] = PLAYER_START[0]
-    settings["startY"] = PLAYER_START[1]
+    settings["startSceneId"] = uid("scene_title")
+    settings["startX"] = MENU_PLAYER[0]
+    settings["startY"] = MENU_PLAYER[1]
     settings["startDirection"] = "right"
     settings["defaultSceneTypeId"] = "PLATFORM"
     settings["playerPaletteId"] = uid("palette-Grok Bot")
@@ -1880,6 +2264,19 @@ def patch_project() -> None:
                     "symbol": "var_hurt_cooldown",
                     "type": "number",
                 },
+                {
+                    "id": SHAPE_VAR,
+                    "name": "player_shape",
+                    "symbol": "var_player_shape",
+                    "type": "number",
+                },
+                {
+                    "id": COLOR_VAR,
+                    "name": "player_color",
+                    "symbol": "var_player_color",
+                    "type": "number",
+                },
+
             ],
             "constants": [],
         },
@@ -2049,6 +2446,11 @@ def main() -> None:
         print("\n".join(layout_rows(segment)))
     if len(painted["clear"]["collisions"]) != CLEAR_W * CLEAR_H:
         raise SystemExit("clear collision size mismatch")
+    for key in ("clear", "title", "picker"):
+        tiles = painted[key]["tiles"]
+        if tiles > 64:
+            raise SystemExit(f"{key} has {tiles} background tiles")
+        print(f"{key.title()}: {tiles} background tiles")
     print("Electrons:", sum(len(segment["electrons"]) for segment in SEGMENTS))
     print("Blobs:", sum(len(segment["blobs"]) for segment in SEGMENTS))
     print("Wrote", ROOT / "GrokBotPlatformer.gbsproj")
