@@ -150,22 +150,184 @@
               ],
               "false": [
                 {
-                  "id": "025d1e38-2578-544f-8a3b-db6b52d2c73f",
-                  "command": "EVENT_SOUND_PLAY_EFFECT",
+                  "id": "ef4131d2-790e-52a1-960b-a42d206e6293",
+                  "command": "EVENT_RATE_LIMIT",
                   "args": {
-                    "type": "beep",
-                    "priority": "low",
-                    "pitch": 2,
-                    "duration": 0.12,
+                    "variable": "5",
                     "units": "time",
-                    "wait": false
-                  }
-                },
-                {
-                  "id": "ebfffeea-e1b9-53b3-bf3a-0e05dafd1177",
-                  "command": "EVENT_PLATFORMER_STATE_SET",
-                  "args": {
-                    "state": "knockback"
+                    "time": {
+                      "type": "number",
+                      "value": 1
+                    },
+                    "frames": {
+                      "type": "number",
+                      "value": 1
+                    }
+                  },
+                  "children": {
+                    "true": [
+                      {
+                        "id": "d2a2cfe2-256b-5007-82c4-a832cb5e9e7c",
+                        "command": "EVENT_INC_VALUE",
+                        "args": {
+                          "variable": "4"
+                        }
+                      },
+                      {
+                        "id": "025d1e38-2578-544f-8a3b-db6b52d2c73f",
+                        "command": "EVENT_SOUND_PLAY_EFFECT",
+                        "args": {
+                          "type": "beep",
+                          "priority": "low",
+                          "pitch": 2,
+                          "duration": 0.12,
+                          "units": "time",
+                          "wait": false
+                        }
+                      },
+                      {
+                        "id": "ebfffeea-e1b9-53b3-bf3a-0e05dafd1177",
+                        "command": "EVENT_PLATFORMER_STATE_SET",
+                        "args": {
+                          "state": "knockback"
+                        }
+                      },
+                      {
+                        "id": "93199743-8e3b-5afb-9d90-4f76df77b06f",
+                        "command": "EVENT_CAMERA_SHAKE",
+                        "args": {
+                          "time": 0.2,
+                          "units": "time",
+                          "shakeDirection": "horizontal",
+                          "magnitude": {
+                            "type": "number",
+                            "value": 3
+                          }
+                        }
+                      },
+                      {
+                        "id": "c738295f-0c1e-5d08-a6ca-e8ed97c5a434",
+                        "command": "EVENT_IF_VALUE",
+                        "args": {
+                          "variable": "4",
+                          "operator": ">=",
+                          "comparator": 3,
+                          "__collapseElse": true
+                        },
+                        "children": {
+                          "true": [
+                            {
+                              "id": "45262705-f463-5847-9f46-edbc9bd822af",
+                              "command": "EVENT_DEC_VALUE",
+                              "args": {
+                                "variable": "1"
+                              }
+                            },
+                            {
+                              "id": "552f31ec-1357-5ff0-ad37-3c228994c6d0",
+                              "command": "EVENT_SET_VALUE",
+                              "args": {
+                                "variable": "4",
+                                "value": {
+                                  "type": "number",
+                                  "value": 0
+                                }
+                              }
+                            },
+                            {
+                              "id": "4f60e29d-5848-56f5-9059-df1a520d2a5f",
+                              "command": "EVENT_ACTOR_SET_FRAME",
+                              "args": {
+                                "actorId": "a19ddf49-a63b-514a-80c8-927a80cb32ae",
+                                "frame": {
+                                  "type": "variable",
+                                  "value": "1"
+                                }
+                              }
+                            },
+                            {
+                              "id": "7c626f76-577b-5822-8c7d-78d7d9d25d6e",
+                              "command": "EVENT_IF_VALUE",
+                              "args": {
+                                "variable": "1",
+                                "operator": "==",
+                                "comparator": 0,
+                                "__collapseElse": false
+                              },
+                              "children": {
+                                "true": [
+                                  {
+                                    "id": "a81b6d93-6405-5c20-a7c0-adbcfb1f428c",
+                                    "command": "EVENT_FADE_OUT",
+                                    "args": {
+                                      "speed": "2"
+                                    }
+                                  },
+                                  {
+                                    "id": "194141a3-9d33-5641-8887-7805db239791",
+                                    "command": "EVENT_FADE_IN",
+                                    "args": {
+                                      "speed": "2"
+                                    }
+                                  },
+                                  {
+                                    "id": "2e29d209-ebdc-513f-b8d1-1132c29a035d",
+                                    "command": "EVENT_TEXT",
+                                    "args": {
+                                      "text": "Game Over"
+                                    }
+                                  },
+                                  {
+                                    "id": "0c99cccb-bb9b-5aa2-a1de-2f1fc8aa4fc7",
+                                    "command": "EVENT_SWITCH_SCENE",
+                                    "args": {
+                                      "sceneId": "3ed68e53-19c9-533f-acfb-b7c4c3d89e8e",
+                                      "x": {
+                                        "type": "number",
+                                        "value": 2
+                                      },
+                                      "y": {
+                                        "type": "number",
+                                        "value": 13
+                                      },
+                                      "direction": "right",
+                                      "fadeSpeed": "2"
+                                    }
+                                  }
+                                ],
+                                "false": [
+                                  {
+                                    "id": "b3a4db53-f12c-5ac8-aeba-c582787acc1c",
+                                    "command": "EVENT_SOUND_PLAY_EFFECT",
+                                    "args": {
+                                      "type": "beep",
+                                      "priority": "low",
+                                      "pitch": 1,
+                                      "duration": 0.12,
+                                      "units": "time",
+                                      "wait": false
+                                    }
+                                  },
+                                  {
+                                    "id": "f660302f-fa6f-587b-8251-2e00d0522dc5",
+                                    "command": "EVENT_CAMERA_SHAKE",
+                                    "args": {
+                                      "time": 0.4,
+                                      "units": "time",
+                                      "shakeDirection": "horizontal",
+                                      "magnitude": {
+                                        "type": "number",
+                                        "value": 5
+                                      }
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
                   }
                 }
               ]

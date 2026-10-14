@@ -12,10 +12,56 @@
   "prefabScriptOverrides": {},
   "script": [
     {
-      "id": "b40fcf6f-9716-5c13-90c4-5dccb4e8bccf",
+      "id": "2cc4cb46-341c-5fd8-9877-23232b88dbfd",
+      "command": "EVENT_CAMERA_SHAKE",
+      "args": {
+        "time": 0.4,
+        "units": "time",
+        "shakeDirection": "horizontal",
+        "magnitude": {
+          "type": "number",
+          "value": 5
+        }
+      }
+    },
+    {
+      "id": "89b8c0c6-a32d-5992-afb8-794de0d4e5e3",
+      "command": "EVENT_WAIT",
+      "args": {
+        "units": "frames",
+        "frames": {
+          "type": "number",
+          "value": 18
+        },
+        "time": {
+          "type": "number",
+          "value": 0.3
+        }
+      }
+    },
+    {
+      "id": "cef6004c-3cda-5369-9cba-3103a5abb66b",
+      "command": "EVENT_FADE_OUT",
+      "args": {
+        "speed": "2"
+      }
+    },
+    {
+      "id": "882eaff2-875f-55fe-b0d1-56c94470d712",
       "command": "EVENT_DEC_VALUE",
       "args": {
         "variable": "1"
+      }
+    },
+    {
+      "id": "a91ddd89-55b2-5eb6-bf24-00d9968db856",
+      "command": "EVENT_SET_VALUE",
+      "args": {
+        "variable": "4",
+        "value": {
+          "type": "number",
+          "value": 0
+        }
       }
     },
     {
@@ -40,6 +86,13 @@
       },
       "children": {
         "true": [
+          {
+            "id": "f526b9fc-ab80-59a6-88fc-14c2474e2564",
+            "command": "EVENT_FADE_IN",
+            "args": {
+              "speed": "2"
+            }
+          },
           {
             "id": "4d734a25-33c8-527d-bb95-a3fd09dc5991",
             "command": "EVENT_TEXT",
@@ -109,6 +162,13 @@
             "command": "EVENT_PLATFORMER_STATE_SET",
             "args": {
               "state": "ground"
+            }
+          },
+          {
+            "id": "214b224f-0fcd-5eda-993d-83e45748a5ae",
+            "command": "EVENT_FADE_IN",
+            "args": {
+              "speed": "2"
             }
           }
         ]

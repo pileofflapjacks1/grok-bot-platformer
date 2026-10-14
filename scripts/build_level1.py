@@ -28,7 +28,10 @@ GRASS_L = (104, 208, 112, 255)
 DIRT = (40, 144, 56, 255)
 OUTLINE = (24, 48, 40, 255)
 
-# Sprite colors. Index 0 is transparent (alpha 0).
+# Sprite colors. GB Studio does not use these RGB values directly.
+# A pixel is transparent when alpha is under 200, or when it is pure green
+# or pure blue. Otherwise the green channel picks the palette slot:
+# 205 or more is color 1, 130 or more is color 2, and the rest is color 3.
 # Grok Bot is a round head, gray shade, and black capsule eyes.
 WHITE = (244, 244, 248, 255)
 GRAY = (138, 138, 152, 255)
@@ -467,37 +470,17 @@ def electron_total() -> int:
 
 
 def paint_ammo() -> list[list[tuple[int, int, int, int]]]:
-    """One frame per ammo value, 0 through the last electron. A pinned actor shows it."""
+    """One frame per ammo value. Blue plate, two white digits.
+
+    On the Electron Blue palette, BLUE is slot 3 and E_WHITE is slot 1.
+    """
     count = electron_total() + 1
-    image = blank(count * 16, 16, CLEAR)
+    image = blank(count * 16, 16, BLUE)
     for value in range(count):
         origin = value * 16
-        draw_mini_electron(image, origin + 1, 4)
-        draw_digit(image, origin + 7, 5, value // 10)
-        draw_digit(image, origin + 11, 5, value % 10)
+        draw_digit(image, origin + 1, 3, value // 10, E_WHITE, 2)
+        draw_digit(image, origin + 8, 3, value % 10, E_WHITE, 2)
     return image
-
-
-def draw_mini_electron(
-    image: list[list[tuple[int, int, int, int]]],
-    origin_x: int,
-    origin_y: int,
-) -> None:
-    for y in range(5):
-        for x in range(5):
-            dx = x - 2
-            dy = y - 2
-            dist = dx * dx + dy * dy
-            pixel_y = origin_y + y
-            pixel_x = origin_x + x
-            if dist <= 1:
-                image[pixel_y][pixel_x] = E_WHITE
-            elif dist <= 4:
-                image[pixel_y][pixel_x] = CYAN
-            elif dist <= 5:
-                image[pixel_y][pixel_x] = BLUE
-    image[origin_y + 2][origin_x + 1] = BLUE
-    image[origin_y + 2][origin_x + 2] = BLUE
 
 
 def draw_digit(
@@ -505,11 +488,15 @@ def draw_digit(
     origin_x: int,
     origin_y: int,
     digit: int,
+    color: tuple[int, int, int, int],
+    scale: int = 1,
 ) -> None:
     for y, row in enumerate(DIGITS[digit]):
         for x, bit in enumerate(row):
             if bit == "1":
-                image[origin_y + y][origin_x + x] = BLUE
+                for sy in range(scale):
+                    for sx in range(scale):
+                        image[origin_y + y * scale + sy][origin_x + x * scale + sx] = color
 
 
 def indexed_tile(spec: tuple[str, ...], colors: list[tuple[int, int, int, int]]) -> list[list[tuple[int, int, int, int]]]:
@@ -661,18 +648,28 @@ def solid_top(segment: dict, x: int) -> int | None:
 
 
 def paint_lives() -> list[list[tuple[int, int, int, int]]]:
-    """Four frames: 0, 1, 2, and 3 red hearts. Frame index matches `lives`."""
-    image = blank(64, 16, CLEAR)
-    outline = [(0, 0), (2, 0), (4, 0), (0, 2), (4, 2), (1, 3), (3, 3), (2, 4)]
-    fill = [(1, 0), (3, 0), (1, 1), (2, 1), (3, 1), (1, 2), (2, 2), (3, 2), (2, 3)]
+    """Four frames. Frame index matches `lives`: a heart and the digit 0 through 3.
+
+    Blob Red shows slot 1 as red, slot 2 as cream, and slot 3 as black.
+    CREAM has a high green channel, so the heart is red in game.
+    GRAY is the middle band, so the digit is cream in game.
+    """
+    heart = (
+        "0110110",
+        "1111111",
+        "1111111",
+        "0111110",
+        "0011100",
+        "0001000",
+    )
+    image = blank(64, 16, BLACK)
     for frame in range(4):
-        for slot in range(frame):
-            ox = frame * 16 + slot * 5
-            oy = 4
-            for x, y in outline:
-                image[oy + y][ox + x] = BLACK
-            for x, y in fill:
-                image[oy + y][ox + x] = RED
+        ox = frame * 16
+        for y, row in enumerate(heart):
+            for x, bit in enumerate(row):
+                if bit == "1":
+                    image[5 + y][ox + x] = CREAM
+        draw_digit(image, ox + 9, 3, frame, GRAY, 2)
     return image
 
 
@@ -832,7 +829,7 @@ def fixed_animation(name: str) -> list[dict]:
 
 
 def lives_animations() -> list[dict]:
-    # Frame index matches the lives variable: 0, 1, 2, then 3 hearts.
+    # Frame index matches the lives variable: heart plus 0, 1, 2, or 3.
     return frames_animation("lives", 4)
 
 
@@ -1078,6 +1075,63 @@ def wait_frames(name: str, frames: int) -> dict:
     )
 
 
+def shake(name: str, seconds: float, magnitude: int) -> dict:
+    return event(
+        name,
+        "EVENT_CAMERA_SHAKE",
+        {
+            "time": seconds,
+            "units": "time",
+            "shakeDirection": "horizontal",
+            "magnitude": {"type": "number", "value": magnitude},
+        },
+    )
+
+
+def fade(name: str, direction: str) -> dict:
+    command = "EVENT_FADE_OUT" if direction == "out" else "EVENT_FADE_IN"
+    return event(name, command, {"speed": "2"})
+
+
+def rate_limit(name: str, variable: str, seconds: float, body: list) -> dict:
+    return event(
+        name,
+        "EVENT_RATE_LIMIT",
+        {
+            "variable": variable,
+            "units": "time",
+            "time": {"type": "number", "value": seconds},
+            "frames": {"type": "number", "value": 1},
+        },
+        {"true": body},
+    )
+
+
+def lose_life(name: str, lives_symbol: str, alive: list, dead: list) -> list:
+    # Variable 1 is lives. Variable 4 is the hit count toward the next life.
+    return [
+        event(f"{name}-dec-life", "EVENT_DEC_VALUE", {"variable": "1"}),
+        set_number(f"{name}-clear-hits", "4", 0),
+        show_lives(f"{name}-hearts", lives_symbol),
+        if_value(f"{name}-dead", "1", "==", 0, dead, alive),
+    ]
+
+
+def game_over(name: str, fade_out_first: bool) -> list:
+    start_x, start_y = PLAYER_START
+    steps = []
+    if fade_out_first:
+        steps.append(fade(f"{name}-over-out", "out"))
+    steps.extend(
+        [
+            fade(f"{name}-over-in", "in"),
+            event(f"{name}-over", "EVENT_TEXT", {"text": "Game Over"}),
+            switch_scene(f"{name}-restart", "scene_level1_green_hills", start_x, start_y),
+        ]
+    )
+    return steps
+
+
 def enemy_update(suffix: str) -> list:
     return [
         move_by(f"{suffix}-move-right", 3),
@@ -1105,10 +1159,41 @@ def vanish_blob(suffix: str, bounce: bool) -> list:
     return steps
 
 
-def enemy_script(suffix: str) -> list:
+def enemy_script(suffix: str, segment: dict) -> list:
+    # One overlap used to run this several times a second. The rate limit
+    # makes one touch count as one hit. Three hits cost a life.
+    lives_symbol = f"actor_lives_{segment['key']}"
     hurt = [
-        beep(f"{suffix}-hurt-sound", 2),
-        event(f"{suffix}-knockback", "EVENT_PLATFORMER_STATE_SET", {"state": "knockback"}),
+        rate_limit(
+            f"{suffix}-hurt-limit",
+            "5",
+            1,
+            [
+                event(f"{suffix}-hit-inc", "EVENT_INC_VALUE", {"variable": "4"}),
+                beep(f"{suffix}-hurt-sound", 2),
+                event(
+                    f"{suffix}-knockback",
+                    "EVENT_PLATFORMER_STATE_SET",
+                    {"state": "knockback"},
+                ),
+                shake(f"{suffix}-hurt-shake", 0.2, 3),
+                if_value(
+                    f"{suffix}-hit-check",
+                    "4",
+                    ">=",
+                    3,
+                    lose_life(
+                        suffix,
+                        lives_symbol,
+                        [
+                            beep(f"{suffix}-life-sound", 1),
+                            shake(f"{suffix}-life-shake", 0.4, 5),
+                        ],
+                        game_over(suffix, True),
+                    ),
+                ),
+            ],
+        )
     ]
     # Falling uses a positive Y velocity. A landing often overlaps the blob,
     # so "player is above" alone misses the stomp.
@@ -1265,23 +1350,19 @@ def show_ammo(name: str, actor_symbol: str) -> dict:
 
 def pit_script(name: str, segment: dict) -> list:
     # The trigger sits at the bottom of the gap, so this runs after the fall.
-    # Hearts update in place. Only a game over reloads, and it reloads scene 1
-    # so lives, ammo, and the chip all start over.
+    # Shake, then fade out, then take the life. A life still left fades back
+    # in at the start of this half. The last life fades in on "Game Over".
     lives_symbol = f"actor_lives_{segment['key']}"
     start_x, start_y = PLAYER_START
     return [
-        event(f"{name}-dec", "EVENT_DEC_VALUE", {"variable": "1"}),
-        show_lives(f"{name}-hearts", lives_symbol),
-        if_value(
-            f"{name}-dead",
-            "1",
-            "==",
-            0,
-            [
-                event(f"{name}-over", "EVENT_TEXT", {"text": "Game Over"}),
-                switch_scene(f"{name}-restart", "scene_level1_green_hills", start_x, start_y),
-            ],
-            respawn(name, start_x, start_y),
+        shake(f"{name}-shake", 0.4, 5),
+        wait_frames(f"{name}-pause", 18),
+        fade(f"{name}-out", "out"),
+        *lose_life(
+            name,
+            lives_symbol,
+            respawn(name, start_x, start_y) + [fade(f"{name}-in", "in")],
+            game_over(name, False),
         ),
     ]
 
@@ -1304,6 +1385,8 @@ def segment_init(segment: dict) -> list:
                 set_number(f"{key}-lives", "1", 3),
                 set_number(f"{key}-chip", "2", 0),
                 set_number(f"{key}-cooldown", "3", 0),
+                set_number(f"{key}-hits", "4", 0),
+                set_number(f"{key}-hurt", "5", 0),
                 set_engine(f"{key}-jump", "plat_jump_vel", BASE_JUMP),
             ]
         )
@@ -1439,7 +1522,7 @@ def write_segment(
                 y=y,
                 sprite_symbol="sprite_enemy_red_blob",
                 palette_name="Blob Red",
-                script=enemy_script(suffix),
+                script=enemy_script(suffix, segment),
                 update_script=enemy_update(suffix),
                 hit1_script=shot_blob(suffix),
             ),
@@ -1775,6 +1858,18 @@ def patch_project() -> None:
                     "symbol": "var_shot_cooldown",
                     "type": "number",
                 },
+                {
+                    "id": "4",
+                    "name": "hits",
+                    "symbol": "var_hits",
+                    "type": "number",
+                },
+                {
+                    "id": "5",
+                    "name": "hurt_cooldown",
+                    "symbol": "var_hurt_cooldown",
+                    "type": "number",
+                },
             ],
             "constants": [],
         },
@@ -1814,8 +1909,8 @@ GB Studio reads every `.png` in this folder. The Level 1 sheets below are 16x16,
 | enemy_red_blob.png | Waddle Blob. Two frames, cream eyes, black pupils, belly, brows, and feet. |
 | electron.png | Electron pickup and the projectile Grok Bot fires. |
 | silicon_chip.png | One power-up. Collecting it unlocks firing for the rest of the run. |
-| lives.png | Four frames in one animation. Frame 0 is empty, then 1, 2, and 3 hearts. The pinned actor shows the frame that matches `lives`. |
-| ammo.png | One frame per electron count, from 0 up. The pinned actor shows the frame that matches `electrons`. |
+| lives.png | Four frames. Each frame is a black badge with a heart and a digit, 0 through 3. The pinned actor shows the frame that matches `lives`. |
+| ammo.png | One frame per electron count, from 0 up. Each frame is a blue badge with two digits. The pinned actor shows the frame that matches `electrons`. |
 
 `actor.png`, `actor_animated.png`, and `static.png` are the GB Studio blank-template placeholders. The player setting points at `player_grok.png`.
 

@@ -18,16 +18,16 @@ Level 1 is two scenes and 340 tiles wide, about five times the previous run. Gre
 
 - Grok Bot is a round head with an antenna and black capsule eyes. Left facing is mirrored.
 - Move with the arrows or WASD. Jump with Alt, Z, or J. Hold Control, K, or X to run. That same button fires an electron once Grok Bot is armed.
-- Thirteen Waddle Blobs, with eyes, a belly, brows, and feet. Stomping one hides it and bounces you. Touching one from the side knocks you back. A shot also removes the blob, without the bounce.
-- Twenty-two electrons. Touching one adds it to the ammo counter in the top-right. You do not need all of them to finish.
+- Thirteen Waddle Blobs, with eyes, a belly, brows, and feet. Stomping one hides it and bounces you. A shot also removes the blob, without the bounce. A side touch knocks you back, shakes the screen, and counts as one hit. Three hits cost one life. You stay where you are, and the hit count resets. There is about a second between hits, so standing on a blob does not count as three.
+- Twenty-two electrons. Touching one adds it to the ammo badge in the top-right. That badge is a blue square with a two-digit count, including 00 before you collect any. You do not need all of them to finish.
 - One silicon chip, on the ground a few steps from the start of Green Hills. The electrons are after it. Collect the chip before the shots will fire. Until then, the run button only runs. Each shot spends one electron. The jump stays at 3.5.
-- You start with 3 lives, shown as hearts in the top-left. Each half has one pit. Falling to the bottom costs a life and puts you back at the start of that half, without pausing. Electrons you already collected stay collected, and a blob you already removed stays gone. At 0 lives the scene says "Game Over" and restarts from the beginning, which clears the ammo and the chip.
+- You start with 3 lives. The top-left badge is a black square with a red heart and that number. Each half has one pit. Falling in shakes the screen, fades out, costs a life, and fades back in at the start of that half. Electrons you already collected stay collected, and a blob you already removed stays gone. At 0 lives the screen fades back in, says "Game Over", and restarts from the beginning, which clears the ammo, the chip, and the hit count.
 - The template song starts again at the beginning of each half.
 - The exit at the end of High Ridge loads a small “Level 1 clear!” scene.
 
 Jump feel is set in `project/engine_field_values.gbsres`: jump velocity 3.5, a slightly lower hold-gravity, coyote time, and jump buffering. See `docs/PLATFORMER_PLUS.md`.
 
-The sky has clouds and distant hills. Those bands scroll slower than the ground. One screen shows the player, the hearts, the ammo count, and at most one blob plus a couple of electrons.
+The sky has clouds and distant hills. Those bands scroll slower than the ground. One screen shows the player, the life badge, the ammo badge, and at most one blob plus a couple of electrons.
 
 `python3 scripts/build_level1.py` regenerates the level art, scenes, and those settings. It does not remove the GB Studio template fonts or UI.
 
