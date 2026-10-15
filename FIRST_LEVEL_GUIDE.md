@@ -30,9 +30,9 @@ Later you can expand to a selection screen that swaps sprites/palettes.
 - Movement + jump are built into the Platform scene type.
 - Tune in **Settings → Platformer**:
   - Jump velocity ~ 3.0–4.0
-  - Gravity while jumping (for floatier Kirby feel or tighter Mario feel)
+  - Gravity while jumping (floatier or tighter)
 
-### Basic Enemy (Waddle Blob)
+### Basic Enemy (Grok Blob)
 1. Create an actor (e.g. simple red blob sprite).
 2. On Update script:
    - **Actor: Move Relative** → Right 4 tiles (or a short distance).
