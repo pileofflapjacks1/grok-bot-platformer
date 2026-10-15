@@ -1,6 +1,6 @@
 # Platformer+ Feel Notes
 
-For a Kirby/Mario hybrid:
+For a responsive platformer with an optional float:
 
 ## Recommended settings
 - Variable jump height (hold longer = higher)
@@ -9,7 +9,7 @@ For a Kirby/Mario hybrid:
 - Mid-air direction change (if using Platformer+ events)
 
 ## Tuning targets
-- Jump feels responsive but not floaty unless you want pure Kirby.
+- Jump feels responsive but not floaty unless you want a floaty style.
 - Stomp bounce should feel satisfying (medium bounce on enemy hit).
 - Keep gravity high enough that the stage stays readable on the small Chromatic screen.
 

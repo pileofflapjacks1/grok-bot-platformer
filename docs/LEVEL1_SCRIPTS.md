@@ -11,7 +11,7 @@ Tune in Settings → Platformer:
 - Gravity while jumping: slightly lower for floatier feel
 - Optional Platformer+: enable coyote time + variable jump height
 
-## Enemy: Waddle Blob
+## Enemy: Grok Blob
 **On Update:**
 1. Actor: Move Relative → Right 3 tiles
 2. Wait 20 frames

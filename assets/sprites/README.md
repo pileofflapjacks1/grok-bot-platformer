@@ -5,7 +5,7 @@ GB Studio reads every `.png` in this folder. The Level 1 sheets below are 16x16,
 | File | Use |
 |------|-----|
 | player_grok.png | Grok Bot. Round head, antenna, black capsule eyes, no mouth. Four frames: idle, walk A, walk B, jump. Left facing is mirrored. |
-| enemy_red_blob.png | Waddle Blob. Two frames, cream eyes, black pupils, belly, brows, and feet. |
+| enemy_red_blob.png | Grok Blob. Two frames, cream eyes, black pupils, belly, brows, and feet. |
 | electron.png | Electron pickup and the projectile Grok Bot fires. |
 | silicon_chip.png | One power-up. Collecting it unlocks firing for the rest of the run. |
 | lives.png | Four frames. Each frame is a black badge with a heart and a digit, 0 through 3. The pinned actor shows the frame that matches `lives`. |

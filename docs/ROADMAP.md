@@ -1,4 +1,6 @@
-# 9-Level + Boss Roadmap
+# Planned levels (roadmap, not built)
+
+Only Level 1 exists today. Everything below is a plan.
 
 Short-session design: each level 1–3 minutes.
 
