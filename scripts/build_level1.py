@@ -1963,6 +1963,10 @@ def respawn_reload(name: str, segment: dict) -> list:
 def unless_done(name: str, steps: list) -> dict:
     return if_value(name, LEVEL_DONE, "==", 0, steps)
 HURT_LOCK = "5"
+# Variable 4: hits taken since the last life change. Cleared by lose_life,
+# reset_run, and every half's init (start of a half, respawn reload, pit).
+HITS_VAR = "4"
+HITS_PER_LIFE = 3
 HURT_GRACE_FRAMES = 60
 
 
@@ -1980,6 +1984,7 @@ def hurt_steps(suffix: str, segment: dict, held: bool = False) -> list:
     # fall or the roadster; a hit only releases 1, the pit releases its own 2
     # after the respawn grace.
     lives_symbol = f"actor_lives_{segment['key']}"
+    unpowered = _unpowered_hit(suffix, segment, lives_symbol)
     return [unless_done(f"{suffix}-hurt-done-check", [
         if_value(
             f"{suffix}-hurt-ready",
@@ -1987,9 +1992,24 @@ def hurt_steps(suffix: str, segment: dict, held: bool = False) -> list:
             "==",
             # held: the caller (enemy_script) already took the lock 0 -> 1.
             1 if held else 0,
-            [set_number(f"{suffix}-hurt-lock", HURT_LOCK, 1)]
-            + [if_value(f"{suffix}-if-powered", POWER_VAR, "==", 1, lose_power(suffix, segment), [
-                event(f"{suffix}-hit-inc", "EVENT_INC_VALUE", {"variable": "4"}),
+            # Every hit counts toward HITS_PER_LIFE, the power-loss hit too.
+            # The 3rd hit always costs a life and reloads the half, powered
+            # or not; earlier hits cost the power-up if powered.
+            [set_number(f"{suffix}-hurt-lock", HURT_LOCK, 1),
+             event(f"{suffix}-hit-inc", "EVENT_INC_VALUE", {"variable": HITS_VAR})]
+            + [if_value(f"{suffix}-if-powered", POWER_VAR, "==", 1, [
+                if_value(f"{suffix}-powered-hit-check", HITS_VAR, "<", HITS_PER_LIFE, lose_power(suffix, segment),
+                    _unpowered_hit(f"{suffix}-p3", segment, lives_symbol)),
+            ], unpowered)]
+            # Only release our own lock (1). A pit or the roadster holds 2,
+            # and a hit's grace that outlives a respawn must not cut it short.
+            + [if_value(f"{suffix}-hurt-unlock-check", HURT_LOCK, "==", 1, [set_number(f"{suffix}-hurt-unlock", HURT_LOCK, 0)])],
+        )
+    ])]
+
+
+def _unpowered_hit(suffix: str, segment: dict, lives_symbol: str) -> list:
+    return [
                 beep(f"{suffix}-hurt-sound", 2),
                 unless_done(f"{suffix}-knockback-check", [
                     event(
@@ -2001,9 +2021,9 @@ def hurt_steps(suffix: str, segment: dict, held: bool = False) -> list:
                 shake(f"{suffix}-hurt-shake", 0.2, 3),
                 if_value(
                     f"{suffix}-hit-check",
-                    "4",
+                    HITS_VAR,
                     ">=",
-                    3,
+                    HITS_PER_LIFE,
                     # Claim the life loss (1 -> 3). If a pit already holds the
                     # lock (2), the pit takes the life and this hit does not.
                     [if_value(f"{suffix}-life-claim", HURT_LOCK, "==", 1, [
@@ -2032,12 +2052,7 @@ def hurt_steps(suffix: str, segment: dict, held: bool = False) -> list:
                     ])],
                 ),
                 wait_frames(f"{suffix}-hurt-grace", HURT_GRACE_FRAMES),
-            ])]
-            # Only release our own lock (1). A pit or the roadster holds 2,
-            # and a hit's grace that outlives a respawn must not cut it short.
-            + [if_value(f"{suffix}-hurt-unlock-check", HURT_LOCK, "==", 1, [set_number(f"{suffix}-hurt-unlock", HURT_LOCK, 0)])],
-        )
-    ])]
+    ]
 
 
 def enemy_script(suffix: str, segment: dict) -> list:
@@ -2513,6 +2528,7 @@ def segment_init(segment: dict) -> list:
         ),
     ], [set_number(f"{key}-hurt", HURT_LOCK, 0)]))
     script.append(set_number(f"{key}-not-done", LEVEL_DONE, 0))
+    script.append(set_number(f"{key}-hits-clear", HITS_VAR, 0))
     script.append(event(f"{key}-player-collide", "EVENT_ACTOR_COLLISIONS_ENABLE", {"actorId": "player"}))
     script.extend(apply_player_choice(key))
     script.append(show_lives(f"{key}-hearts", lives_symbol))
