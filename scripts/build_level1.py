@@ -1987,11 +1987,27 @@ def attach_fire(segment: dict, prefix: str | None = None) -> dict:
     # A prefix gives re-attached copies (after a pit respawn) their own event ids.
     key = prefix or segment["key"]
     ammo_symbol = f"actor_ammo_{segment['key']}"
+    # Take the electron first, then launch only if the count did not go
+    # below 0. GBVM preempts a thread every 16 instructions, so a powered
+    # hit can zero the ammo between this script's ammo check and its
+    # decrement; the shot is then dropped and the count clamped back to 0.
     shot = [
         event(f"{key}-shot-dec", "EVENT_DEC_VALUE", {"variable": "0"}),
-        show_counter(f"{key}-shot-hud", ammo_symbol, "0"),
-        beep(f"{key}-shot-sound", 8),
-        launch_electron(f"{key}-shot-launch"),
+        if_value(
+            f"{key}-shot-still-ammo",
+            "0",
+            ">=",
+            0,
+            [
+                show_counter(f"{key}-shot-hud", ammo_symbol, "0"),
+                beep(f"{key}-shot-sound", 8),
+                launch_electron(f"{key}-shot-launch"),
+            ],
+            [
+                set_number(f"{key}-shot-clamp", "0", 0),
+                show_counter(f"{key}-shot-clamp-hud", ammo_symbol, "0"),
+            ],
+        ),
     ]
     # No EVENT_RATE_LIMIT here (it had the same sys_time/0 init bug as the
     # hurt cooldown and could block firing for minutes). GBVM does not start
