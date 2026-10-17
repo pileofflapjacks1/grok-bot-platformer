@@ -2059,6 +2059,13 @@ def pit_script(name: str, segment: dict) -> list:
         ]
     return [
         event(f"{name}-freeze", "EVENT_PLATFORMER_STATE_SET", {"state": "blank"}),
+        # Hold the hurt lock for the whole fall: a Bolt Tower bolt (the x=60
+        # tower sits next to the High Ridge pit) still reaches the player in
+        # blank state (projectiles.c tests PLAYER directly), and its hurt
+        # script would set knockback mid-fall and could take a second life.
+        # respawn() clears the lock; Game Over reloads the scene, whose init
+        # clears it.
+        set_number(f"{name}-hurt-hold", HURT_LOCK, 1),
         no_fire(f"{name}-nofire"),
         set_engine(f"{name}-stop-vx", "plat_vel_x", 0),
         set_engine(f"{name}-stop-vy", "plat_vel_y", 0),
