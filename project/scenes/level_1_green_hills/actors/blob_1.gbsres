@@ -1054,14 +1054,28 @@
                         }
                       },
                       {
-                        "id": "91f9bc58-daf8-5fa9-8743-25f2fc3c0e6d",
-                        "command": "EVENT_SET_VALUE",
+                        "id": "1bd151ac-4fb8-5cb4-a259-3b8ef14c858f",
+                        "command": "EVENT_IF_VALUE",
                         "args": {
                           "variable": "5",
-                          "value": {
-                            "type": "number",
-                            "value": 0
-                          }
+                          "operator": "==",
+                          "comparator": 1,
+                          "__collapseElse": true
+                        },
+                        "children": {
+                          "true": [
+                            {
+                              "id": "91f9bc58-daf8-5fa9-8743-25f2fc3c0e6d",
+                              "command": "EVENT_SET_VALUE",
+                              "args": {
+                                "variable": "5",
+                                "value": {
+                                  "type": "number",
+                                  "value": 0
+                                }
+                              }
+                            }
+                          ]
                         }
                       }
                     ]

@@ -1747,6 +1747,9 @@ def lose_power(name: str, segment: dict) -> list:
     ]
 
 
+# hurt_lock values: 0 free, 1 a hit script is running, 2 held by a pit fall
+# or the roadster cutscene (released only by that script or scene init).
+HURT_HOLD = 2
 HURT_LOCK = "5"
 HURT_GRACE_FRAMES = 60
 
@@ -1796,7 +1799,9 @@ def hurt_steps(suffix: str, segment: dict) -> list:
                 ),
                 wait_frames(f"{suffix}-hurt-grace", HURT_GRACE_FRAMES),
             ])]
-            + [set_number(f"{suffix}-hurt-unlock", HURT_LOCK, 0)],
+            # Only release our own lock (1). A pit or the roadster holds 2,
+            # and a hit's grace that outlives a respawn must not cut it short.
+            + [if_value(f"{suffix}-hurt-unlock-check", HURT_LOCK, "==", 1, [set_number(f"{suffix}-hurt-unlock", HURT_LOCK, 0)])],
         )
     ]
 
@@ -1957,7 +1962,7 @@ def roadster_script(name: str) -> list:
         # still reaches the player in blank state and its knockback would
         # break the sequence. Never released here; the title scene does not
         # use it and Level 1's init clears it.
-        set_number(f"{name}-hurt-hold", HURT_LOCK, 1),
+        set_number(f"{name}-hurt-hold", HURT_LOCK, HURT_HOLD),
         set_engine(f"{name}-stop-vx", "plat_vel_x", 0),
         set_engine(f"{name}-stop-vy", "plat_vel_y", 0),
         no_fire(f"{name}-nofire"),
@@ -2014,7 +2019,6 @@ def respawn(name: str, x: int, y: int) -> list:
         set_engine(f"{name}-vx", "plat_vel_x", 0),
         set_engine(f"{name}-vy", "plat_vel_y", 0),
         event(f"{name}-ground", "EVENT_PLATFORMER_STATE_SET", {"state": "ground"}),
-        set_number(f"{name}-hurt-reset", HURT_LOCK, 0),
     ]
 
 
@@ -2072,9 +2076,9 @@ def pit_script(name: str, segment: dict) -> list:
         # tower sits next to the High Ridge pit) still reaches the player in
         # blank state (projectiles.c tests PLAYER directly), and its hurt
         # script would set knockback mid-fall and could take a second life.
-        # respawn() clears the lock; Game Over reloads the scene, whose init
+        # the alive path releases it after the respawn grace; Game Over reloads the scene, whose init
         # clears it.
-        set_number(f"{name}-hurt-hold", HURT_LOCK, 1),
+        set_number(f"{name}-hurt-hold", HURT_LOCK, HURT_HOLD),
         no_fire(f"{name}-nofire"),
         set_engine(f"{name}-stop-vx", "plat_vel_x", 0),
         set_engine(f"{name}-stop-vy", "plat_vel_y", 0),
@@ -2093,6 +2097,10 @@ def pit_script(name: str, segment: dict) -> list:
                 event(f"{name}-back", "EVENT_ACTOR_SHOW", {"actorId": "player"}),
                 attach_fire(segment, f"{name}-refire"),
                 fade(f"{name}-in", "in"),
+                # Respawn invulnerability: keep the pit's hold through the
+                # same grace window a normal hit gets, then release it.
+                wait_frames(f"{name}-respawn-grace", HURT_GRACE_FRAMES),
+                set_number(f"{name}-hurt-release", HURT_LOCK, 0),
             ],
             game_over(name, False),
         ),
