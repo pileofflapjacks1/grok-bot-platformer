@@ -1540,6 +1540,20 @@ def lose_life(name: str, lives_symbol: str, alive: list, dead: list) -> list:
     ]
 
 
+def reset_run(name: str) -> list:
+    """Lives 3, and ammo, chip, hits, score, powered, hurt lock, level-done 0."""
+    return [
+        set_number(f"{name}-lives", "1", 3),
+        set_number(f"{name}-ammo", "0", 0),
+        set_number(f"{name}-chip", "2", 0),
+        set_number(f"{name}-hits", "4", 0),
+        set_number(f"{name}-score", SCORE_VAR, 0),
+        set_number(f"{name}-power", POWER_VAR, 0),
+        set_number(f"{name}-hurt", HURT_LOCK, 0),
+        set_number(f"{name}-done", LEVEL_DONE, 0),
+    ]
+
+
 def game_over(name: str, fade_out_first: bool, from_hit: bool = False) -> list:
     """Game Over text, then restart Level 1.
 
@@ -1548,14 +1562,16 @@ def game_over(name: str, fade_out_first: bool, from_hit: bool = False) -> list:
     pit) has taken over, so Game Over is skipped: a last-life hit can never
     race LEVEL 1 CLEAR. The screen fades back in and the cutscene carries on.
     """
-    start_x, start_y = PLAYER_START
     steps = []
     if fade_out_first:
         steps.append(fade(f"{name}-over-out", "out"))
     over = [
         fade(f"{name}-over-in", "in"),
         event(f"{name}-over", "EVENT_TEXT", {"text": "Game Over"}),
-        switch_scene(f"{name}-restart", "scene_level1_green_hills", start_x, start_y),
+        # Full reset so the next game starts clean (Green Hills' init resets
+        # these again when the new game starts).
+        *reset_run(f"{name}-over-reset"),
+        switch_scene(f"{name}-to-title", "scene_title", *MENU_PLAYER),
     ]
     if from_hit:
         return steps + [if_value(f"{name}-over-check", HURT_LOCK, "==", 1, over, [fade(f"{name}-over-skip-in", "in")])]
