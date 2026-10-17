@@ -1677,17 +1677,30 @@ def lose_power(name: str) -> list:
     ]
 
 
+HURT_LOCK = "5"
+HURT_GRACE_FRAMES = 60
+
+
 def hurt_steps(suffix: str, segment: dict) -> list:
-    # One overlap used to run this several times a second. The rate limit
-    # (variable 5, shared by every hazard) makes one touch count as one hit and
-    # gives about a second of grace. Three hits cost a life.
+    # Variable 5 is a hurt lock shared by every hazard: 0 = can be hurt,
+    # 1 = a hit is being handled (about a second of grace). It replaces the
+    # old EVENT_RATE_LIMIT on variable 5. GBVM's vm_rate_limit_const stores a
+    # deadline (sys_time + frames) and skips the body while
+    # (sys_time - deadline) >= 0x8000; the scene init set variable 5 to 0, so
+    # whenever the 16-bit sys_time was 32768-65535 (from about 9 minutes after
+    # power-on, for about 9 minutes of every 18) every hurt was skipped:
+    # Grok Bot walked through blobs, bats, towers and bolts. Each scene init
+    # and each pit respawn resets the lock, so a script cut short by a scene
+    # switch cannot leave it stuck.
     lives_symbol = f"actor_lives_{segment['key']}"
     return [
-        rate_limit(
-            f"{suffix}-hurt-limit",
-            "5",
-            1,
-            [if_value(f"{suffix}-if-powered", POWER_VAR, "==", 1, lose_power(suffix), [
+        if_value(
+            f"{suffix}-hurt-ready",
+            HURT_LOCK,
+            "==",
+            0,
+            [set_number(f"{suffix}-hurt-lock", HURT_LOCK, 1)]
+            + [if_value(f"{suffix}-if-powered", POWER_VAR, "==", 1, lose_power(suffix), [
                 event(f"{suffix}-hit-inc", "EVENT_INC_VALUE", {"variable": "4"}),
                 beep(f"{suffix}-hurt-sound", 2),
                 event(
@@ -1711,7 +1724,9 @@ def hurt_steps(suffix: str, segment: dict) -> list:
                         game_over(suffix, True),
                     ),
                 ),
-            ])],
+                wait_frames(f"{suffix}-hurt-grace", HURT_GRACE_FRAMES),
+            ])]
+            + [set_number(f"{suffix}-hurt-unlock", HURT_LOCK, 0)],
         )
     ]
 
@@ -1926,6 +1941,7 @@ def respawn(name: str, x: int, y: int) -> list:
         set_engine(f"{name}-vx", "plat_vel_x", 0),
         set_engine(f"{name}-vy", "plat_vel_y", 0),
         event(f"{name}-ground", "EVENT_PLATFORMER_STATE_SET", {"state": "ground"}),
+        set_number(f"{name}-hurt-reset", HURT_LOCK, 0),
     ]
 
 
@@ -2024,10 +2040,11 @@ def segment_init(segment: dict) -> list:
                 set_number(f"{key}-chip", "2", 0),
                 set_number(f"{key}-cooldown", "3", 0),
                 set_number(f"{key}-hits", "4", 0),
-                set_number(f"{key}-hurt", "5", 0),
                 set_engine(f"{key}-jump", "plat_jump_vel", BASE_JUMP),
             ]
         )
+    # Both halves clear the hurt lock (see hurt_steps).
+    script.append(set_number(f"{key}-hurt", HURT_LOCK, 0))
     script.extend(apply_player_choice(key))
     script.append(show_lives(f"{key}-hearts", lives_symbol))
     script.append(show_ammo(f"{key}-ammo", ammo_symbol))
@@ -3203,8 +3220,8 @@ def patch_project() -> None:
                 },
                 {
                     "id": "5",
-                    "name": "hurt_cooldown",
-                    "symbol": "var_hurt_cooldown",
+                    "name": "hurt_lock",
+                    "symbol": "var_hurt_lock",
                     "type": "number",
                 },
                 {
