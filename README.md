@@ -14,7 +14,7 @@ An original GB Studio platformer for the ModRetro Chromatic and other Game Boy C
 ## Play Level 1
 Open `GrokBotPlatformer.gbsproj` in GB Studio 4.2 or newer and press Play.
 
-Boot flow: Title ("GROK BOT", PRESS START) → Picker → Level 1. Start or A leaves the title right away. On the picker, Left/Right cycles circle, square, heart, star, and triangle, Up/Down cycles white, red, yellow, teal, and A starts. The default is round + white, so Start, A gets you playing. The choice is kept through pits and Game Over (which restarts Level 1, not the picker). After "Level 1 clear!" a button press returns to the title.
+Boot flow: Title ("GROK BOT", PRESS START) → Picker → Level 1. Start or A leaves the title right away. On the picker, Left/Right cycles circle, square, heart, star, triangle, teardrop, oval, and blob (wrapping both ways), Up/Down cycles white, red, yellow, teal, and A starts. The default is circle + white, so Start, A gets you playing. The choice is kept through pits and Game Over (which restarts Level 1, not the picker). After "Level 1 clear!" a button press returns to the title.
 
 Level 1 is two scenes and 340 tiles wide, about five times the previous run. Green Hills leads straight into High Ridge. A full clear is a few minutes, not a 15 second clip.
 
@@ -45,10 +45,10 @@ Level 1 sheets are in `assets/sprites/`:
 - `lives.png`
 - `ammo.png`
 
-- `player_grok_square.png`, `player_heart.png`, `player_star.png`, `player_triangle.png` (picker shapes; recolored by sprite palette slot 0)
+- `player_grok_square.png`, `player_heart.png`, `player_star.png`, `player_triangle.png`, `player_teardrop.png`, `player_oval.png`, `player_blob.png` (picker shapes; indexed PNGs recolored by sprite palette slot 0; contact sheet in `docs/shapes-sheet.png`)
 - `press_start.png` (title text)
 
-Five of the shapes and four colors from `docs/CHARACTER_SELECTION.md` are in the picker.
+Eight shapes and four colors are in the picker; see `docs/CHARACTER_SELECTION.md`.
 
 ## Next Steps
 1. Pull this project on the test computer, open it in GB Studio, and record a normal-speed clear.
