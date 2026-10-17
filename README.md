@@ -14,7 +14,7 @@ An original GB Studio platformer for the ModRetro Chromatic and other Game Boy C
 ## Play Level 1
 The game is called **GROK BOT HERO** (the project name in `GrokBotPlatformer.gbsproj`; the file name is unchanged so existing clones keep working). Open `GrokBotPlatformer.gbsproj` in GB Studio 4.2 or newer and press Play.
 
-Boot flow: Title ("GROK BOT HERO", PRESS START) → Picker → Level 1. Start or A leaves the title right away. On the picker, Left/Right cycles circle, square, heart, star, triangle, teardrop, oval, and blob (wrapping both ways), Up/Down cycles white, red, yellow, teal, and A starts. The default is circle + white, so Start, A gets you playing. The choice is kept through pits and Game Over (which restarts Level 1, not the picker). After "LEVEL CLEAR" a button press returns to the title.
+Boot flow: Title ("GROK BOT HERO", PRESS START) → Picker → Level 1. Start or A leaves the title right away. On the picker (on-screen hints: LEFT/RIGHT: SHAPE, UP/DOWN: COLOR), Left/Right cycles circle, square, heart, star, triangle, teardrop, oval, and blob (wrapping both ways), Up/Down cycles white, red, yellow, teal, and A starts. The default is circle + white, so Start, A gets you playing. The choice is kept through pits and Game Over (which restarts Level 1, not the picker). After "LEVEL CLEAR" a button press returns to the title.
 
 Level 1 is two scenes and 340 tiles wide, about five times the previous run. Green Hills leads straight into High Ridge. A full clear is a few minutes, not a 15 second clip.
 

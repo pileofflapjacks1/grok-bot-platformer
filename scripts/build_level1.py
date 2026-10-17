@@ -2803,6 +2803,16 @@ GLYPHS = {
     "R": ("11110", "10001", "10001", "11110", "10100", "10010", "10001"),
     "S": ("01111", "10000", "10000", "01110", "00001", "00001", "11110"),
     "T": ("11111", "00100", "00100", "00100", "00100", "00100", "00100"),
+    "C": ("01110", "10001", "10000", "10000", "10000", "10001", "01110"),
+    "D": ("11110", "10001", "10001", "10001", "10001", "10001", "11110"),
+    "F": ("11111", "10000", "10000", "11110", "10000", "10000", "10000"),
+    "I": ("01110", "00100", "00100", "00100", "00100", "00100", "01110"),
+    "L": ("10000", "10000", "10000", "10000", "10000", "10000", "11111"),
+    "N": ("10001", "11001", "10101", "10011", "10001", "10001", "10001"),
+    "U": ("10001", "10001", "10001", "10001", "10001", "10001", "01110"),
+    "W": ("10001", "10001", "10001", "10101", "10101", "10101", "01010"),
+    "/": ("00001", "00010", "00010", "00100", "01000", "01000", "10000"),
+    ":": ("00000", "00100", "00100", "00000", "00100", "00100", "00000"),
     "=": ("00000", "00000", "11111", "00000", "11111", "00000", "00000"),
     "<": ("00010", "00110", "01110", "11110", "01110", "00110", "00010"),
     ">": ("01000", "01100", "01110", "01111", "01110", "01100", "01000"),
@@ -2863,8 +2873,22 @@ def paint_title():
     return image, collisions, colors
 
 
+PICKER_HINTS = (("LEFT/RIGHT: SHAPE", 3), ("UP/DOWN: COLOR", 5))
+
+
 def paint_picker():
     image, collisions, colors = paint_menu_base()
+    # Control hints, drawn into the background (no sprites, no VRAM beyond
+    # the letter tiles). Tiles under each line go back to plain sky on
+    # background palette 0 so clouds do not tint the text.
+    for text, tile_y in PICKER_HINTS:
+        tile_x = (CLEAR_W - len(text)) // 2
+        for tx in range(tile_x, tile_x + len(text)):
+            colors[tile_y * CLEAR_W + tx] = 0
+            for y in range(8):
+                for x in range(8):
+                    image[tile_y * 8 + y][tx * 8 + x] = SKY
+        draw_text(image, tile_x * 8, tile_y * 8, text, OUTLINE)
     arrow_y = (PICKER_BOT_AT[1] + 1) * 8
     draw_text(image, (PICKER_BOT_AT[0] - 3) * 8, arrow_y, "<", OUTLINE)
     draw_text(image, (PICKER_BOT_AT[0] + 4) * 8, arrow_y, ">", OUTLINE)
