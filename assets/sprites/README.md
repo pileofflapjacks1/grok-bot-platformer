@@ -20,7 +20,7 @@ GB Studio reads every `.png` in this folder. The Level 1 sheets below are 16x16,
 | flyer.png | Zap Bat, a small winged bot. Two frames, wings up and down. |
 | turret.png | Bolt Tower, the High Ridge shooter. |
 | bolt.png | The Bolt Tower's projectile. |
-| roadster.png | 32x16 generic red two-seat convertible for the level-complete cutscene. No badge, logo, or wordmark. |
+| roadster.png | 32x16 white low two-seat electric hypercar silhouette (wedge profile, dark canopy, black wheels with gray hubs) for the level-complete cutscene. Original art; no badge, logo, or wordmark. |
 | press_start_0..3.png | Single-frame strips that together read PRESS START on the title. |
 
 `actor.png`, `actor_animated.png`, and `static.png` are the GB Studio blank-template placeholders. The player setting points at `player_grok.png`.

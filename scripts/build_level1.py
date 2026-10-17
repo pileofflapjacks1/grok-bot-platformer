@@ -691,58 +691,65 @@ def paint_bolt() -> list[list[tuple[int, int, int, int]]]:
     return image
 
 
-def paint_roadster() -> list[list[tuple[int, int, int, int]]]:
-    """A generic red two-seat convertible, facing right. 32x16, original art.
+R_WHITE = (248, 248, 248, 255)  # light band: Roadster White body
+R_GRAY = (120, 150, 170, 255)  # mid band: canopy glass and wheel hubs
 
-    No badge, logo, or wordmark. RED body (mid), CREAM glass, headlight and
-    trim (light), BLACK outline, tyres, and seats (dark).
+
+def roadster_top(x: int) -> int:
+    """Top row of the body at column x: a low wedge / teardrop, facing right.
+
+    Short kicked-up tail on the left, canopy peak just behind the middle,
+    then a long falling nose down to the right edge.
+    """
+    if x <= 2:
+        return 9
+    if x <= 7:
+        return 8
+    if x <= 18:
+        # Teardrop canopy: rises to row 5 around x=11-13, falls back by x=18.
+        return max(5, 8 - min(x - 7, 3) + max(0, (x - 13) * 3 // 5))
+    return 8 + (x - 18) // 4
+
+
+def paint_roadster() -> list[list[tuple[int, int, int, int]]]:
+    """A sleek, low two-seat electric hypercar silhouette, facing right.
+
+    32x16, original procedural art (inspired by a modern electric roadster's
+    proportions only). No badge, logo, emblem, or wordmark. Roadster White
+    palette: white body (light), dark glass canopy and gray hubs (mid),
+    black outline and wheels (dark).
     """
     image = blank(32, 16, CLEAR)
-    # Body profile per column: (top row, bottom row). Low nose on the right,
-    # open cockpit in the middle, short rear deck on the left.
-    profile = {}
+    bottom = 12
     for x in range(1, 31):
-        if x <= 3:
-            top = 9
-        elif x <= 9:
-            top = 8
-        elif x <= 18:
-            top = 9  # cockpit sill
-        elif x <= 23:
-            top = 9
-        else:
-            top = 10 + (x - 24) // 3
-        profile[x] = (top, 13)
-    for x, (top, bottom) in profile.items():
+        top = roadster_top(x)
         for y in range(top, bottom + 1):
             edge = y in (top, bottom) or x in (1, 30)
-            image[y][x] = BLACK if edge else RED
-    # Side trim line and door seam.
-    for x in range(3, 29):
-        if image[11][x] == RED:
-            image[11][x] = CREAM
-    for y in range(10, 13):
-        image[y][15] = BLACK
-    # Two seat backs in the open cockpit, and a raked windshield frame.
-    for x0 in (10, 14):
-        for y in range(6, 9):
-            for x in range(x0, x0 + 2):
-                image[y][x] = BLACK
-    for index, y in enumerate(range(5, 9)):
-        image[y][19 + index] = BLACK
-        if index < 3:
-            image[y][20 + index] = CREAM
-    # Headlight and tail light.
-    image[11][29] = CREAM
-    image[10][2] = CREAM
-    # Wheels with a light hub.
+            # Outline also wherever the neighbour column's top is lower (keeps
+            # the wedge edge closed on steps).
+            if x > 1 and y < roadster_top(x - 1) or x < 30 and y < roadster_top(x + 1):
+                edge = True
+            image[y][x] = BLACK if edge else R_WHITE
+    # Dark glass canopy: the bubble above the beltline (row 8), x 8..18.
+    for x in range(8, 19):
+        for y in range(roadster_top(x) + 1, 9):
+            if image[y][x] == R_WHITE:
+                image[y][x] = R_GRAY
+    # Beltline under the glass, and a thin lower side intake.
+    for x in range(12, 18):
+        image[11][x] = BLACK
+    # Slim headlight slit at the nose, tail light at the back.
+    image[12][27] = BLACK
+    image[12][28] = BLACK
+    image[10][2] = BLACK
+    # Black wheels with gray hubs.
     for cx in (7, 24):
         for y in range(11, 16):
             for x in range(cx - 3, cx + 3):
                 if (x + 0.5 - cx) ** 2 + (y + 0.5 - 13.5) ** 2 <= 2.6**2:
                     image[y][x] = BLACK
-        image[13][cx - 1] = CREAM
-        image[13][cx] = CREAM
+        image[13][cx - 1] = R_GRAY
+        image[13][cx] = R_GRAY
     return image
 
 
@@ -1104,7 +1111,7 @@ def tile_ref(name: str, x: int, slice_x: int, palette_index: int = 0) -> dict:
 # Scene sprite palette slots. In color mode GB Studio 4 reads the palette
 # from each sprite tile's paletteIndex (compileSprites.ts makeProps), not from
 # the actor's paletteId. Slot 0 is Grok Bot; the picker color swaps slot 0.
-SLOT = {"scoredigit": 2, "scoretens": 2, "enemy": 1, "lives": 1, "electron": 2, "ammo": 2, "chip": 3, "flyer": 5, "turret": 3, "bolt": 1, "roadster": 1}
+SLOT = {"scoredigit": 2, "scoretens": 2, "enemy": 1, "lives": 1, "electron": 2, "ammo": 2, "chip": 3, "flyer": 5, "turret": 3, "bolt": 1, "roadster": 4}
 
 
 def frame_of(name: str, slice_x: int) -> dict:
@@ -1214,6 +1221,26 @@ def wide_animation(name: str, width: int) -> list[dict]:
     animations = [{"id": uid(name + "-anim0"), "frames": [frame]}]
     animations.extend(empty_frame(f"{name}-anim{index}") for index in range(1, 8))
     return animations
+
+
+def check_wide_coverage(name: str, image: list, width: int) -> None:
+    """Every opaque pixel must fall in a tile wide_animation places on screen.
+
+    Tile x is relative to the centred 16 px base (originX = width/2 - 8), so
+    tile i covers canvas columns originX + (8 - width/2) + 8i .. +7. A column
+    left uncovered would be cut off in game (the old "missing nose" bug).
+    """
+    origin = width // 2 - 8
+    covered = set()
+    for index in range(width // 8):
+        start = origin + (8 - width // 2) + index * 8
+        if not 0 <= start <= width - 8:
+            raise SystemExit(f"{name}: tile {index} starts outside the canvas at {start}")
+        covered.update(range(start, start + 8))
+    for row in image:
+        for x, pixel in enumerate(row):
+            if pixel[3] and x not in covered:
+                raise SystemExit(f"{name}: opaque pixel at column {x} is not in any tile")
 
 
 def fixed_animation(name: str) -> list[dict]:
@@ -2147,7 +2174,9 @@ def build_images() -> dict:
     write_png(sprites / "score_digit.png", 160, 16, paint_score_digits(False))
     write_png(sprites / "score_tens.png", 160, 16, paint_score_digits(True))
     write_png(sprites / "turret.png", 16, 16, paint_turret())
-    write_png(sprites / "roadster.png", 32, 16, paint_roadster())
+    roadster = paint_roadster()
+    check_wide_coverage("roadster", roadster, 32)
+    write_png(sprites / "roadster.png", 32, 16, roadster)
     write_png(sprites / "bolt.png", 16, 16, paint_bolt())
     write_png(sprites / "lives.png", 64, 16, paint_lives())
     write_png(sprites / "ammo.png", ammo_frames * 16, 16, paint_ammo())
@@ -2361,7 +2390,7 @@ def write_segment(
                 x=x,
                 y=y,
                 sprite_symbol="sprite_roadster",
-                palette_name="Blob Red",
+                palette_name="Roadster White",
                 script=roadster_script(f"{key}-roadster"),
                 animate=False,
                 # Group 2: touched by the player, ignored by electron shots.
@@ -2658,6 +2687,10 @@ def build_resources(collisions: dict) -> None:
         palette("Blob Red", sprite_palette("F8E8D0", "F84848", "181018")),
     )
     write_json(
+        palettes / "roadster_white.gbsres",
+        palette("Roadster White", sprite_palette("F8F8F8", "586078", "101018")),
+    )
+    write_json(
         palettes / "electron_blue.gbsres",
         palette("Electron Blue", sprite_palette("E8F8FF", "50D8F8", "1848C8")),
     )
@@ -2698,7 +2731,7 @@ def build_resources(collisions: dict) -> None:
         uid("palette-Blob Red"),
         uid("palette-Electron Blue"),
         uid("palette-Chip Gray"),
-        "default-sprite",
+        uid("palette-Roadster White"),
         uid("palette-Flyer Violet"),
         "default-sprite",
         "default-sprite",
@@ -3163,7 +3196,7 @@ def patch_project() -> None:
         uid("palette-Blob Red"),
         uid("palette-Electron Blue"),
         uid("palette-Chip Gray"),
-        "default-sprite",
+        uid("palette-Roadster White"),
         uid("palette-Flyer Violet"),
         "default-sprite",
         "default-sprite",
@@ -3286,7 +3319,7 @@ GB Studio reads every `.png` in this folder. The Level 1 sheets below are 16x16,
 | flyer.png | Zap Bat, a small winged bot. Two frames, wings up and down. |
 | turret.png | Bolt Tower, the High Ridge shooter. |
 | bolt.png | The Bolt Tower's projectile. |
-| roadster.png | 32x16 generic red two-seat convertible for the level-complete cutscene. No badge, logo, or wordmark. |
+| roadster.png | 32x16 white low two-seat electric hypercar silhouette (wedge profile, dark canopy, black wheels with gray hubs) for the level-complete cutscene. Original art; no badge, logo, or wordmark. |
 | press_start_0..3.png | Single-frame strips that together read PRESS START on the title. |
 
 `actor.png`, `actor_animated.png`, and `static.png` are the GB Studio blank-template placeholders. The player setting points at `player_grok.png`.
