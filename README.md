@@ -46,7 +46,7 @@ Level 1 sheets are in `assets/sprites/`:
 - `ammo.png`
 
 - `player_grok_square.png`, `player_heart.png`, `player_star.png`, `player_triangle.png`, `player_teardrop.png`, `player_oval.png`, `player_blob.png` (picker shapes; indexed PNGs recolored by sprite palette slot 0; contact sheet in `docs/shapes-sheet.png`)
-- `press_start.png` (title text)
+- `press_start_0.png` .. `press_start_3.png` (title text, one single-frame sheet per strip)
 
 Eight shapes and four colors are in the picker; see `docs/CHARACTER_SELECTION.md`.
 

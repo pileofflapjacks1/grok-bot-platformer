@@ -1651,7 +1651,8 @@ def build_images() -> dict:
     for shape in PLAYER_SHAPES:
         write_png_indexed(sprites / PLAYER_FILES[shape], 64, 16, paint_shape_player(shape), PLAYER_INDEXED)
     write_shapes_sheet(ROOT / "docs" / "shapes-sheet.png")
-    write_png(sprites / "press_start.png", PRESS_FRAMES * 16, 16, paint_press_start())
+    for index, part in enumerate(paint_press_start()):
+        write_png(sprites / f"press_start_{index}.png", 16, 16, part)
     write_png(sprites / "enemy_red_blob.png", 32, 16, paint_enemy())
     write_png(sprites / "electron.png", 16, 16, paint_electron())
     write_png(sprites / "silicon_chip.png", 16, 16, paint_chip())
@@ -1662,6 +1663,8 @@ def build_images() -> dict:
         "player_pink.png.gbsres",
         "collectible_star.png",
         "collectible_star.png.gbsres",
+        "press_start.png",
+        "press_start.png.gbsres",
     ):
         path = sprites / stale
         if path.exists():
@@ -1951,20 +1954,21 @@ def build_resources(collisions: dict) -> None:
                 num_tiles=8,
             ),
         )
-    write_json(
-        sprites / "press_start.png.gbsres",
-        sprite_resource(
-            name="press_start",
-            symbol="sprite_press_start",
-            filename="press_start.png",
-            image_path=sprites / "press_start.png",
-            width=PRESS_FRAMES * 16,
-            height=16,
-            animation_type="fixed",
-            animations=frames_animation("press", PRESS_FRAMES),
-            num_tiles=PRESS_FRAMES * 2,
-        ),
-    )
+    for index in range(PRESS_PARTS):
+        write_json(
+            sprites / f"press_start_{index}.png.gbsres",
+            sprite_resource(
+                name=f"press_start_{index}",
+                symbol=f"sprite_press_start_{index}",
+                filename=f"press_start_{index}.png",
+                image_path=sprites / f"press_start_{index}.png",
+                width=16,
+                height=16,
+                animation_type="fixed",
+                animations=fixed_animation(f"press{index}"),
+                num_tiles=2,
+            ),
+        )
     for key in ("title", "picker"):
         write_json(
             backgrounds / f"{key}.png.gbsres",
@@ -2119,9 +2123,15 @@ DOTS = [
     ("Dot Teal", "30C8B8"),
 ]
 SHAPES = ["sprite_" + PLAYER_FILES[shape][:-4] for shape in PLAYER_SHAPES]
-PRESS_TEXT = "PRESS START "
-PRESS_FRAMES = len(PRESS_TEXT) // 2
-PRESS_AT = (4, 11)
+PRESS_TEXT = "PRESS START"
+# GB Studio 4 does not compile an actor's starting "frame" into the scene
+# (generateGBVMData.ts only emits anim_tick, not a frame), so six actors that
+# shared one 6-frame sheet all drew frame 0 ("PR"). Each strip is now its own
+# single-frame 16x16 sheet: no frame index anywhere. A 6 px glyph pitch fits
+# the 11 characters in 64 px, so 4 actors = 8 hardware sprites on the row
+# (the old 6 actors were 12, over the 10-per-scanline limit).
+PRESS_PARTS = 4
+PRESS_AT = (6, 11)
 TITLE_BOT_AT = (9, CLEAR_TOP - 2)
 PICKER_BOT_AT = (9, 8)
 
@@ -2195,10 +2205,26 @@ def paint_picker():
     return image, collisions, colors
 
 
-def paint_press_start() -> list[list[tuple[int, int, int, int]]]:
-    image = blank(PRESS_FRAMES * 16, 16, CLEAR)
-    draw_text(image, 0, 4, PRESS_TEXT, BLACK)
-    return image
+def draw_text_narrow(image, px: int, py: int, text: str, color) -> int:
+    """5x7 glyphs at a 6 px pitch; a space is 4 px. Returns the end x."""
+    x = px
+    for char in text:
+        if char == " ":
+            x += 4
+            continue
+        for y, row in enumerate(GLYPHS[char]):
+            for gx, bit in enumerate(row):
+                if bit == "1":
+                    image[py + y][x + gx] = color
+        x += 6
+    return x
+
+
+def paint_press_start() -> list[list[list[tuple[int, int, int, int]]]]:
+    """Four single-frame 16x16 strips that together read PRESS START."""
+    strip = blank(PRESS_PARTS * 16, 16, CLEAR)
+    draw_text_narrow(strip, 1, 4, PRESS_TEXT, BLACK)
+    return [[row[index * 16 : index * 16 + 16] for row in strip] for index in range(PRESS_PARTS)]
 
 
 def palette_set(name: str, palette_name: str) -> dict:
@@ -2374,14 +2400,14 @@ def write_menus(painted: dict, bg_ids: list[str], sprite_ids: list[str]) -> None
             collision_group="",
         ),
     )
-    press = [uid(f"actor_title_press_{index}") for index in range(PRESS_FRAMES)]
+    press = [uid(f"actor_title_press_{index}") for index in range(PRESS_PARTS)]
     blink = [
         wait_frames("blink-on", 36),
         *[event(f"blink-hide-{index}", "EVENT_ACTOR_HIDE", {"actorId": actor_id}) for index, actor_id in enumerate(press)],
         wait_frames("blink-off", 18),
         *[event(f"blink-show-{index}", "EVENT_ACTOR_SHOW", {"actorId": actor_id}) for index, actor_id in enumerate(press)],
     ]
-    for index in range(PRESS_FRAMES):
+    for index in range(PRESS_PARTS):
         write_json(
             title_actors / f"press_start_{index}.gbsres",
             actor(
@@ -2390,11 +2416,10 @@ def write_menus(painted: dict, bg_ids: list[str], sprite_ids: list[str]) -> None
                 index=1 + index,
                 x=PRESS_AT[0] + index * 2,
                 y=PRESS_AT[1],
-                sprite_symbol="sprite_press_start",
+                sprite_symbol=f"sprite_press_start_{index}",
                 palette_name="Grok Bot",
                 script=[],
                 update_script=blink if index == 0 else None,
-                frame=index,
                 animate=False,
                 collision_group="",
             ),
