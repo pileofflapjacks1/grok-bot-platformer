@@ -490,6 +490,9 @@ def _shape_mask(shape: str, dy: int) -> list[list[bool]]:
     return mask
 
 
+EYE_SHIFTS = (2, 1)
+
+
 def draw_shape_bot(image, origin: int, dy: int, shape: str) -> None:
     mask = _shape_mask(shape, dy)
     for y in range(16):
@@ -501,13 +504,35 @@ def draw_shape_bot(image, origin: int, dy: int, shape: str) -> None:
                 for ox, oy in ((1, 0), (-1, 0), (0, 1), (0, -1))
             )
             image[y][origin + x] = GRAY if edge else WHITE
-    # Eyes: two short, thick horizontal black ovals, 3x2 px each, mirrored about
-    # the cell's centre line. At 16x16 a 3x2 block is the smallest readable oval.
+    # Facing: the sheet faces right (flipLeft mirrors it for left). The
+    # trailing (left) edge gets a 2 px outline, a darker back side, so even
+    # the symmetric shapes read as pointing one way.
+    back = [
+        (y, x)
+        for y in range(16)
+        for x in range(1, 8)
+        if image[y][origin + x] == WHITE and image[y][origin + x - 1] == GRAY
+    ]
+    for y, x in back:
+        image[y][origin + x] = GRAY
+    # Eyes: two short, thick horizontal black ovals, 3x2 px each, shifted
+    # toward the facing side by EYE_SHIFT px (2, or 1 where the shape is too
+    # narrow), staying on fill pixels so the outline stays closed.
     eye_top, eye_xs = PLAYER_EYES[shape]
     eye_y = eye_top + dy
+
+    def fits(shift: int) -> bool:
+        return all(
+            0 <= yy < 16 and image[yy][origin + xx] == WHITE
+            for cx in eye_xs
+            for yy in (eye_y, eye_y + 1)
+            for xx in range(cx + shift, cx + shift + 3)
+        )
+
+    shift = next((s for s in EYE_SHIFTS if fits(s)), 0)
     for cx in eye_xs:
         for yy in (eye_y, eye_y + 1):
-            for xx in range(cx, cx + 3):
+            for xx in range(cx + shift, cx + shift + 3):
                 if 0 <= yy < 16 and image[yy][origin + xx][3]:
                     image[yy][origin + xx] = BLACK
 
