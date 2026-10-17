@@ -2555,8 +2555,14 @@ def segment_init(segment: dict) -> list:
     script.extend(show_score(f"{key}-init", key))
     script.append(attach_fire(segment))
     # Respawn grace: blink for its length (blink_player: 5 x 12 frames = 60),
-    # last, so the HUD and fire binding are already in place.
-    script.append(if_value(f"{key}-grace-blink", HURT_LOCK, "==", HURT_RESPAWN, blink_player(f"{key}-grace")))
+    # last, so the HUD and fire binding are already in place. It runs in a
+    # background thread: the scene init runs with the VM locked, so blinking
+    # inline froze the player and every actor for that second and held off
+    # timer 1 (the grace grew from ~74 to ~123 frames in PyBoy).
+    script.append(if_value(f"{key}-grace-blink", HURT_LOCK, "==", HURT_RESPAWN, [
+        event(f"{key}-grace-thread", "EVENT_THREAD_START", {"variable": "T0", "__scriptTabs": "true"},
+              {"true": blink_player(f"{key}-grace")}),
+    ]))
     return script
 
 
