@@ -1953,6 +1953,11 @@ def roadster_script(name: str) -> list:
     return [
         event(f"{name}-once", "EVENT_ACTOR_COLLISIONS_DISABLE", {"actorId": "$self$"}),
         event(f"{name}-freeze", "EVENT_PLATFORMER_STATE_SET", {"state": "blank"}),
+        # Hold the hurt lock for the whole cutscene (like the pit): a bolt
+        # still reaches the player in blank state and its knockback would
+        # break the sequence. Never released here; the title scene does not
+        # use it and Level 1's init clears it.
+        set_number(f"{name}-hurt-hold", HURT_LOCK, 1),
         set_engine(f"{name}-stop-vx", "plat_vel_x", 0),
         set_engine(f"{name}-stop-vy", "plat_vel_y", 0),
         no_fire(f"{name}-nofire"),
