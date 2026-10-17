@@ -89,6 +89,8 @@ SCORE_VAR = "8"
 # 10). The single-digit frames leave the right 8 px blank, which GB Studio
 # drops from the frame, so those two actors cost 1 hardware sprite each.
 SCORE_AT = 7
+# Highest score the HUD can show: its last digit is a fixed 0 (awards are multiples of 10).
+SCORE_MAX = 9990
 SCORE_DIGITS = (("k", 1000, "sprite_score_digit"), ("h", 100, "sprite_score_digit"), ("t", 10, "sprite_score_tens"))
 POINTS = {"blob": 100, "flyer": 200, "turret": 500, "electron": 10, "chip": 1000, "clear": 1000}
 VIOLET = (152, 160, 224, 255)  # mid band: the body slot of Flyer Violet
@@ -1871,6 +1873,9 @@ def add_score(name: str, key: str, points: int) -> list:
                 },
             },
         ),
+        # The HUD shows four digits; cap at SCORE_MAX so it never wraps to 0000.
+        # Every award is at most 1000, so the sum stays under 32767 first.
+        if_value(f"{name}-score-cap", SCORE_VAR, ">", SCORE_MAX, [set_number(f"{name}-score-max", SCORE_VAR, SCORE_MAX)]),
         *show_score(f"{name}-hud", key),
     ]
 
