@@ -959,7 +959,10 @@ def actor(
         "paletteId": uid("palette-" + palette_name),
         "direction": "right",
         "moveSpeed": 1,
-        "animSpeed": 15,
+        # 255 is GB Studio's "None" animation speed (ANIM_PAUSED). Without it the
+        # engine cycles every multi-frame sheet regardless of "animate", so HUD
+        # counters and the Press Start strips scrolled through their frames.
+        "animSpeed": 15 if animate else 255,
         "isPinned": pinned,
         "persistent": False,
         "collisionGroup": collision_group,
