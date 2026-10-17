@@ -832,6 +832,17 @@
                                                 }
                                               },
                                               {
+                                                "id": "ef437c0f-84eb-55d0-b6f6-3493e603daed",
+                                                "command": "EVENT_SET_VALUE",
+                                                "args": {
+                                                  "variable": "10",
+                                                  "value": {
+                                                    "type": "number",
+                                                    "value": 0
+                                                  }
+                                                }
+                                              },
+                                              {
                                                 "id": "9c8e1736-daed-5e09-8895-947472990dd8",
                                                 "command": "EVENT_SWITCH_SCENE",
                                                 "args": {
@@ -915,17 +926,21 @@
                                                 }
                                               },
                                               {
-                                                "id": "1b73ebb9-115b-5e4b-8bd8-bf1fd8ec6abb",
-                                                "command": "EVENT_FADE_OUT",
+                                                "id": "5224cb41-ccb2-5821-a4aa-b14fb0ba674f",
+                                                "command": "EVENT_SET_VALUE",
                                                 "args": {
-                                                  "speed": "2"
+                                                  "variable": "10",
+                                                  "value": {
+                                                    "type": "number",
+                                                    "value": 1
+                                                  }
                                                 }
                                               },
                                               {
-                                                "id": "9bc795e6-5489-5863-a928-821ffc2bbbde",
-                                                "command": "EVENT_ACTOR_SET_POSITION",
+                                                "id": "42005b2b-d502-546d-8a45-f1e9bbb1aa1d",
+                                                "command": "EVENT_SWITCH_SCENE",
                                                 "args": {
-                                                  "actorId": "player",
+                                                  "sceneId": "fd2af8f3-2f5e-5a9e-91fd-1274f949eee1",
                                                   "x": {
                                                     "type": "number",
                                                     "value": 2
@@ -934,199 +949,8 @@
                                                     "type": "number",
                                                     "value": 13
                                                   },
-                                                  "units": "tiles"
-                                                }
-                                              },
-                                              {
-                                                "id": "7b271083-b633-5527-9ea2-5fd8fac02a42",
-                                                "command": "EVENT_ENGINE_FIELD_SET",
-                                                "args": {
-                                                  "engineFieldKey": "plat_vel_x",
-                                                  "value": {
-                                                    "type": "number",
-                                                    "value": 0
-                                                  }
-                                                }
-                                              },
-                                              {
-                                                "id": "66cc920b-6d08-55cb-85b5-51b7b284c3dc",
-                                                "command": "EVENT_ENGINE_FIELD_SET",
-                                                "args": {
-                                                  "engineFieldKey": "plat_vel_y",
-                                                  "value": {
-                                                    "type": "number",
-                                                    "value": 0
-                                                  }
-                                                }
-                                              },
-                                              {
-                                                "id": "bdf3e4ab-6c9f-51a5-9b56-7349fe373582",
-                                                "command": "EVENT_PLATFORMER_STATE_SET",
-                                                "args": {
-                                                  "state": "ground"
-                                                }
-                                              },
-                                              {
-                                                "id": "56f9331a-f0a1-586e-b6e5-90c54ed8247b",
-                                                "command": "EVENT_ACTOR_SHOW",
-                                                "args": {
-                                                  "actorId": "player"
-                                                }
-                                              },
-                                              {
-                                                "id": "92bfe917-917f-5863-a415-2649b55c6788",
-                                                "command": "EVENT_FADE_IN",
-                                                "args": {
-                                                  "speed": "2"
-                                                }
-                                              },
-                                              {
-                                                "id": "299bd05a-d8d1-5f77-8f0e-5e288cc8d71f",
-                                                "command": "EVENT_SET_INPUT_SCRIPT",
-                                                "args": {
-                                                  "input": [
-                                                    "b"
-                                                  ],
-                                                  "override": false
-                                                },
-                                                "children": {
-                                                  "true": [
-                                                    {
-                                                      "id": "61f5ed66-de4b-5a8f-be51-cf7bfea3a6e1",
-                                                      "command": "EVENT_IF_VALUE",
-                                                      "args": {
-                                                        "variable": "0",
-                                                        "operator": ">",
-                                                        "comparator": 0,
-                                                        "__collapseElse": true
-                                                      },
-                                                      "children": {
-                                                        "true": [
-                                                          {
-                                                            "id": "4eba0873-9047-5eaa-a3a1-30652c83ba48",
-                                                            "command": "EVENT_IF_VALUE",
-                                                            "args": {
-                                                              "variable": "2",
-                                                              "operator": ">",
-                                                              "comparator": 0,
-                                                              "__collapseElse": true
-                                                            },
-                                                            "children": {
-                                                              "true": [
-                                                                {
-                                                                  "id": "6cdc8f51-5876-5f98-95b7-a7f5af7c8e33",
-                                                                  "command": "EVENT_DEC_VALUE",
-                                                                  "args": {
-                                                                    "variable": "0"
-                                                                  }
-                                                                },
-                                                                {
-                                                                  "id": "98606c30-719e-5344-9d59-34412f966db0",
-                                                                  "command": "EVENT_IF_VALUE",
-                                                                  "args": {
-                                                                    "variable": "0",
-                                                                    "operator": ">=",
-                                                                    "comparator": 0,
-                                                                    "__collapseElse": false
-                                                                  },
-                                                                  "children": {
-                                                                    "true": [
-                                                                      {
-                                                                        "id": "479afcb9-f5ff-5ba5-8ea4-bbaf0461fc8b",
-                                                                        "command": "EVENT_ACTOR_SET_FRAME",
-                                                                        "args": {
-                                                                          "actorId": "815b9e0b-64d0-5136-8c2b-e64947ec01b0",
-                                                                          "frame": {
-                                                                            "type": "variable",
-                                                                            "value": "0"
-                                                                          }
-                                                                        }
-                                                                      },
-                                                                      {
-                                                                        "id": "7ac95aa1-afbb-5da9-b19e-d17893c4c5d6",
-                                                                        "command": "EVENT_SOUND_PLAY_EFFECT",
-                                                                        "args": {
-                                                                          "type": "beep",
-                                                                          "priority": "low",
-                                                                          "pitch": 8,
-                                                                          "duration": 0.12,
-                                                                          "units": "time",
-                                                                          "wait": false
-                                                                        }
-                                                                      },
-                                                                      {
-                                                                        "id": "0c049f83-0436-5367-a9ef-2284ebd64c29",
-                                                                        "command": "EVENT_LAUNCH_PROJECTILE",
-                                                                        "args": {
-                                                                          "spriteSheetId": "35888de7-5cd2-50e1-b4a1-267b8bda5e9a",
-                                                                          "spriteStateId": "55f7ef4c-af9d-5dd3-8e96-45ac18974161",
-                                                                          "actorId": "player",
-                                                                          "x": 0,
-                                                                          "y": 2,
-                                                                          "directionType": "actor",
-                                                                          "otherActorId": "player",
-                                                                          "direction": "right",
-                                                                          "speed": 3,
-                                                                          "animSpeed": 15,
-                                                                          "lifeTime": 0.55,
-                                                                          "initialOffset": 12,
-                                                                          "loopAnim": true,
-                                                                          "destroyOnHit": true,
-                                                                          "collisionGroup": "1",
-                                                                          "collisionMask": [
-                                                                            "1"
-                                                                          ]
-                                                                        }
-                                                                      }
-                                                                    ],
-                                                                    "false": [
-                                                                      {
-                                                                        "id": "5593c00a-b33e-58ac-807d-28a71b26b808",
-                                                                        "command": "EVENT_SET_VALUE",
-                                                                        "args": {
-                                                                          "variable": "0",
-                                                                          "value": {
-                                                                            "type": "number",
-                                                                            "value": 0
-                                                                          }
-                                                                        }
-                                                                      },
-                                                                      {
-                                                                        "id": "7171513d-d4d6-56f6-b5d0-7a44d2700114",
-                                                                        "command": "EVENT_ACTOR_SET_FRAME",
-                                                                        "args": {
-                                                                          "actorId": "815b9e0b-64d0-5136-8c2b-e64947ec01b0",
-                                                                          "frame": {
-                                                                            "type": "variable",
-                                                                            "value": "0"
-                                                                          }
-                                                                        }
-                                                                      }
-                                                                    ]
-                                                                  }
-                                                                },
-                                                                {
-                                                                  "id": "7ca615e7-0d8f-59a0-b76c-8f45a0e87b43",
-                                                                  "command": "EVENT_WAIT",
-                                                                  "args": {
-                                                                    "units": "frames",
-                                                                    "frames": {
-                                                                      "type": "number",
-                                                                      "value": 36
-                                                                    },
-                                                                    "time": {
-                                                                      "type": "number",
-                                                                      "value": 0.6
-                                                                    }
-                                                                  }
-                                                                }
-                                                              ]
-                                                            }
-                                                          }
-                                                        ]
-                                                      }
-                                                    }
-                                                  ]
+                                                  "direction": "right",
+                                                  "fadeSpeed": "2"
                                                 }
                                               }
                                             ]

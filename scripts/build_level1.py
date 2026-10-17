@@ -1696,6 +1696,7 @@ def reset_run(name: str) -> list:
         set_number(f"{name}-power", POWER_VAR, 0),
         set_number(f"{name}-hurt", HURT_LOCK, 0),
         set_number(f"{name}-done", LEVEL_DONE, 0),
+        set_number(f"{name}-respawning", RESPAWN_VAR, 0),
     ]
 
 
@@ -1932,6 +1933,20 @@ ROADSTER_HOLD = 10
 # first, and again right before knockback (a hit script already running when
 # the roadster starts must not knock the player out of the cutscene).
 LEVEL_DONE = "3"
+# Variable 10: 1 while a lost life reloads the current half. Respawning by
+# Change Scene (instead of moving the player inside the live scene) gives a
+# clean actor, projectile and OAM state; the half's init then keeps lives,
+# score, ammo, chip and power instead of resetting them, and starts a short
+# invulnerability window (lock HURT_RESPAWN, released by timer 1).
+RESPAWN_VAR = "10"
+HURT_RESPAWN = 5
+
+
+def respawn_reload(name: str, segment: dict) -> list:
+    return [
+        set_number(f"{name}-respawn-flag", RESPAWN_VAR, 1),
+        switch_scene(f"{name}-respawn-reload", segment["symbol"], *PLAYER_START),
+    ]
 
 
 def unless_done(name: str, steps: list) -> dict:
@@ -1994,11 +2009,8 @@ def hurt_steps(suffix: str, segment: dict, held: bool = False) -> list:
                                 # B is unbound through the fade (like the pit),
                                 # so no electron is spent while the screen is dark.
                                 no_fire(f"{suffix}-life-nofire"),
-                                fade(f"{suffix}-life-out", "out"),
-                                *respawn(f"{suffix}-life", *PLAYER_START),
-                                event(f"{suffix}-life-show", "EVENT_ACTOR_SHOW", {"actorId": "player"}),
-                                fade(f"{suffix}-life-in", "in"),
-                                attach_fire(segment, f"{suffix}-life-refire"),
+                                # Reload this half at its start (see RESPAWN_VAR).
+                                *respawn_reload(f"{suffix}-life", segment),
                             ]),
                         ],
                         game_over(suffix, True, from_hit=True),
@@ -2351,24 +2363,6 @@ def exit_script(prefix: str, key: str) -> list:
     ]
 
 
-def respawn(name: str, x: int, y: int) -> list:
-    return [
-        event(
-            f"{name}-pos",
-            "EVENT_ACTOR_SET_POSITION",
-            {
-                "actorId": "player",
-                "x": {"type": "number", "value": x},
-                "y": {"type": "number", "value": y},
-                "units": "tiles",
-            },
-        ),
-        set_engine(f"{name}-vx", "plat_vel_x", 0),
-        set_engine(f"{name}-vy", "plat_vel_y", 0),
-        event(f"{name}-ground", "EVENT_PLATFORMER_STATE_SET", {"state": "ground"}),
-    ]
-
-
 def show_counter(name: str, actor_symbol: str, variable: str) -> dict:
     return event(
         name,
@@ -2401,7 +2395,6 @@ def pit_script(name: str, segment: dict) -> list:
     # A life still left fades back in at the start of this half. The last
     # life fades in on "Game Over".
     lives_symbol = f"actor_lives_{segment['key']}"
-    start_x, start_y = PLAYER_START
     fall = []
     for index, pixels in enumerate(FALL_STEPS):
         fall += [
@@ -2418,15 +2411,9 @@ def pit_script(name: str, segment: dict) -> list:
             wait_frames(f"{name}-fall-wait{index}", 3),
         ]
     def alive(tag: str) -> list:
-        return respawn(tag, start_x, start_y) + [
-            event(f"{tag}-back", "EVENT_ACTOR_SHOW", {"actorId": "player"}),
-            attach_fire(segment, f"{tag}-refire"),
-            fade(f"{tag}-in", "in"),
-            # Respawn invulnerability: keep the pit's hold through the
-            # same grace window a normal hit gets, then release it.
-            wait_frames(f"{tag}-respawn-grace", HURT_GRACE_FRAMES),
-            set_number(f"{tag}-hurt-release", HURT_LOCK, 0),
-        ]
+        # Reload this half at its start (see RESPAWN_VAR); the init gives
+        # the respawn invulnerability window.
+        return respawn_reload(tag, segment)
 
     return [
         event(f"{name}-freeze", "EVENT_PLATFORMER_STATE_SET", {"state": "blank"}),
@@ -2482,8 +2469,7 @@ def segment_init(segment: dict) -> list:
         )
     ]
     if segment["reset"]:
-        script.extend(
-            [
+        script.append(if_value(f"{key}-new-run", RESPAWN_VAR, "==", 0, [
                 set_number(f"{key}-electrons", "0", 0),
                 set_number(f"{key}-power", POWER_VAR, 0),
                 set_number(f"{key}-score", SCORE_VAR, 0),
@@ -2491,11 +2477,23 @@ def segment_init(segment: dict) -> list:
                 set_number(f"{key}-chip", "2", 0),
                 set_number(f"{key}-hits", "4", 0),
                 set_engine(f"{key}-jump", "plat_jump_vel", BASE_JUMP),
-            ]
-        )
+        ]))
     # Both halves clear the hurt lock (see hurt_steps) and the level-done
-    # flag, and make sure the player can be hit again.
-    script.append(set_number(f"{key}-hurt", HURT_LOCK, 0))
+    # flag, and make sure the player can be hit again. After a respawn
+    # reload the lock is held at HURT_RESPAWN for HURT_GRACE_FRAMES instead.
+    script.append(if_value(f"{key}-respawned", RESPAWN_VAR, "==", 1, [
+        set_number(f"{key}-hurt-respawn", HURT_LOCK, HURT_RESPAWN),
+        set_number(f"{key}-respawn-clear", RESPAWN_VAR, 0),
+        event(
+            f"{key}-respawn-grace",
+            "EVENT_SET_TIMER_SCRIPT",
+            {"timer": 1, "duration": HURT_GRACE_FRAMES / 60, "units": "time", "frames": HURT_GRACE_FRAMES},
+            {"script": [
+                if_value(f"{key}-grace-end", HURT_LOCK, "==", HURT_RESPAWN, [set_number(f"{key}-grace-release", HURT_LOCK, 0)]),
+                event(f"{key}-grace-timer-off", "EVENT_TIMER_DISABLE", {"timer": 1}),
+            ]},
+        ),
+    ], [set_number(f"{key}-hurt", HURT_LOCK, 0)]))
     script.append(set_number(f"{key}-not-done", LEVEL_DONE, 0))
     script.append(event(f"{key}-player-collide", "EVENT_ACTOR_COLLISIONS_ENABLE", {"actorId": "player"}))
     script.extend(apply_player_choice(key))
@@ -3641,6 +3639,12 @@ def patch_project() -> None:
                     "id": "5",
                     "name": "hurt_lock",
                     "symbol": "var_hurt_lock",
+                    "type": "number",
+                },
+                {
+                    "id": RESPAWN_VAR,
+                    "name": "respawning",
+                    "symbol": "var_respawning",
                     "type": "number",
                 },
                 {
