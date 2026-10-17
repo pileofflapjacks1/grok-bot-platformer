@@ -778,6 +778,90 @@ def paint_roadster() -> list[list[tuple[int, int, int, int]]]:
     return image
 
 
+# Kickflip: in-plane rotation steps in degrees (counter-clockwise reads as
+# the nose lifting first). Frame 0 is the car at rest.
+KICKFLIP_ANGLES = (0, 60, 120, 180, 240, 300)
+ROADSTER_CANVAS = (32, 32)
+
+
+def paint_roadster_flip() -> list[list[tuple[int, int, int, int]]]:
+    """One 32x32 cell per KICKFLIP_ANGLES entry, side by side.
+
+    Cell 0 is the parked car on the bottom 16 rows (exactly where the old
+    32x16 sheet put it). The other cells rotate that car about the canvas
+    centre with nearest-neighbour sampling, so they stay 3 colors plus clear
+    and keep the black outline; rotation crops a few corner pixels at most.
+    """
+    import math
+
+    car = paint_roadster()
+    width, height = ROADSTER_CANVAS
+    base = blank(width, height, CLEAR)
+    for y in range(16):
+        for x in range(32):
+            base[16 + y][x] = car[y][x]
+    image = blank(width * len(KICKFLIP_ANGLES), height, CLEAR)
+    # Centre of the car's opaque area (rows 21-31 of the cell, cols 1-30).
+    ccx, ccy = 15.5, 26.0
+    for index, angle in enumerate(KICKFLIP_ANGLES):
+        ox = index * width
+        if angle == 0:
+            for y in range(height):
+                for x in range(width):
+                    image[y][ox + x] = base[y][x]
+            continue
+        rad = math.radians(angle)
+        cos_a, sin_a = math.cos(rad), math.sin(rad)
+        for y in range(height):
+            for x in range(width):
+                # Destination is centred on the canvas centre (lifted), source
+                # on the car's own centre.
+                dx, dy = x + 0.5 - 16, y + 0.5 - 16
+                sx = cos_a * dx - sin_a * dy + ccx
+                sy = sin_a * dx + cos_a * dy + ccy
+                ix, iy = int(math.floor(sx)), int(math.floor(sy))
+                if 0 <= ix < width and 0 <= iy < height:
+                    image[y][ox + x] = base[iy][ix]
+    return image
+
+
+def flip_animation(name: str) -> list[dict]:
+    """One animation, one frame per kickflip cell, 4x2 tiles of 8x16 each.
+
+    Tile x is relative to the centred 16 px base (x = -8..16, as in
+    wide_animation) and tile y counts up from the base: y=0 is the bottom 16
+    rows of the 32 px canvas, y=16 the top (readSpriteData: originY -
+    tile.y). Blank tiles are dropped by GB Studio.
+    """
+    palette_index = SLOT.get(name, 0)
+    width, height = ROADSTER_CANVAS
+    frames = []
+    for index in range(len(KICKFLIP_ANGLES)):
+        tiles = []
+        for row, tile_y in enumerate((16, 0)):
+            for col in range(width // 8):
+                ref = tile_ref(f"{name}-f{index}-r{row}-c{col}", col * 8 - 8, index * width + col * 8, palette_index)
+                ref["y"] = tile_y
+                ref["sliceY"] = row * 16
+                tiles.append(ref)
+        frames.append({"id": uid(f"{name}-f{index}"), "tiles": tiles})
+    animations = [{"id": uid(name + "-anim0"), "frames": frames}]
+    animations.extend(empty_frame(f"{name}-anim{index}") for index in range(1, 8))
+    return animations
+
+
+def flip_tile_count(image) -> int:
+    """Non-blank 8x16 tiles across all kickflip cells (before dedup)."""
+    count = 0
+    for cell in range(len(KICKFLIP_ANGLES)):
+        for row in (0, 16):
+            for col in range(4):
+                x0 = cell * 32 + col * 8
+                if any(image[row + y][x0 + x][3] for y in range(16) for x in range(8)):
+                    count += 1
+    return count
+
+
 def paint_score_digits(with_zero: bool) -> list[list[tuple[int, int, int, int]]]:
     """Ten 16x16 frames: a light 2x digit with a dark outline in the left 8 px.
 
@@ -1167,6 +1251,7 @@ def sprite_resource(
     num_tiles: int,
     canvas_width: int = 16,
     bounds: tuple[int, int, int, int] | None = None,
+    canvas_height: int = 16,
 ) -> dict:
     # Bounds are (x, y, w, h) from the top-left of the 16 px base, y down
     # (compileBounds in generateGBVMData.ts).
@@ -1189,7 +1274,7 @@ def sprite_resource(
         "canvasOriginX": 0,
         "canvasOriginY": 0,
         "canvasWidth": canvas_width,
-        "canvasHeight": 16,
+        "canvasHeight": canvas_height,
         # Bounds are relative to the same 16 px base as metasprite tiles, so a
         # wider canvas starts (canvas_width / 2 - 8) px left of it.
         "boundsX": bx,
@@ -2123,6 +2208,22 @@ def roadster_script(name: str, segment: dict) -> list:
         # Keep the drive short so the car stays on the screen the camera shows
         # (it follows the hidden player at the car's rest spot).
         drive("roll", 1, 0, "horizontal"),
+        # Kickflip: a short hop, one full turn through the rotation frames
+        # (about 4 frames each), back to frame 0, then the climb as before.
+        beep(f"{name}-hop", 7),
+        drive("hop", 0, -1, "vertical"),
+        *[
+            step
+            for index in list(range(1, len(KICKFLIP_ANGLES))) + [0]
+            for step in (
+                event(
+                    f"{name}-flip{index}",
+                    "EVENT_ACTOR_SET_FRAME",
+                    {"actorId": "$self$", "frame": {"type": "number", "value": index}},
+                ),
+                wait_frames(f"{name}-flip-wait{index}", 4),
+            )
+        ],
         beep(f"{name}-lift", 9),
         drive("climb", 1, -3, "diagonal"),
         # Relative moves saturate at y=0, so the car cannot leave through the
@@ -2353,7 +2454,8 @@ def build_images() -> dict:
     write_png(sprites / "turret.png", 16, 16, paint_turret())
     roadster = paint_roadster()
     check_wide_coverage("roadster", roadster, 32)
-    write_png(sprites / "roadster.png", 32, 16, roadster)
+    flip = paint_roadster_flip()
+    write_png(sprites / "roadster.png", 32 * len(KICKFLIP_ANGLES), 32, flip)
     write_png(sprites / "bolt.png", 16, 16, paint_bolt())
     write_png(sprites / "lives.png", 64, 16, paint_lives())
     write_png(sprites / "ammo.png", ammo_frames * 16, 16, paint_ammo())
@@ -2693,12 +2795,13 @@ def build_resources(collisions: dict) -> None:
             symbol="sprite_roadster",
             filename="roadster.png",
             image_path=sprites / "roadster.png",
-            width=32,
-            height=16,
+            width=32 * len(KICKFLIP_ANGLES),
+            height=32,
             animation_type="fixed",
-            animations=wide_animation("roadster", 32),
-            num_tiles=4,
+            animations=flip_animation("roadster"),
+            num_tiles=flip_tile_count(paint_roadster_flip()),
             canvas_width=32,
+            canvas_height=32,
         ),
     )
     for name in ("turret", "bolt"):
@@ -3502,7 +3605,7 @@ GB Studio reads every `.png` in this folder. The Level 1 sheets below are 16x16,
 | flyer.png | Zap Bat, a small winged bot. Two frames, wings up and down. |
 | turret.png | Bolt Tower, the High Ridge shooter. |
 | bolt.png | The Bolt Tower's projectile. |
-| roadster.png | 32x16 white low two-seat electric hypercar silhouette (wedge profile, dark canopy, black wheels with gray hubs) for the level-complete cutscene. Original art; no badge, logo, or wordmark. |
+| roadster.png | Six 32x32 kickflip frames (0, 60, ... 300 degrees; 32 non-blank 8x16 tiles) of a 32x16 white low two-seat electric hypercar silhouette (wedge profile, dark canopy, black wheels with gray hubs) for the level-complete cutscene. Original art; no badge, logo, or wordmark. |
 | press_start_0..3.png | Single-frame strips that together read PRESS START on the title. |
 
 `actor.png`, `actor_animated.png`, and `static.png` are the GB Studio blank-template placeholders. The player setting points at `player_grok.png`.
