@@ -182,6 +182,52 @@ def write_png(path: Path, width: int, height: int, rows: list[list[tuple[int, in
     path.write_bytes(png)
 
 
+# Player sheets are written as palette-mode (indexed) PNGs. Index order
+# matches the GB Studio sprite color numbers: 0 transparent, 1 light (fill),
+# 2 mid (shade), 3 dark (outline). GB Studio decodes any PNG to RGBA with
+# pngjs and then maps each pixel by alpha and green channel (spriteDataIndexFn
+# in src/shared/lib/sprites/spriteData.ts), so the RGB values below are what
+# it sees; tRNS makes index 0 fully transparent.
+PLAYER_INDEXED = [CLEAR, WHITE, GRAY, BLACK]
+
+
+def write_png_indexed(
+    path: Path,
+    width: int,
+    height: int,
+    rows: list[list[tuple[int, int, int, int]]],
+    palette: list[tuple[int, int, int, int]],
+) -> None:
+    lookup = {color: index for index, color in enumerate(palette)}
+    raw = bytearray()
+    for y in range(height):
+        raw.append(0)
+        for x in range(width):
+            raw.append(lookup[rows[y][x]])
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(data))
+            + tag
+            + data
+            + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+        )
+
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 3, 0, 0, 0)
+    plte = b"".join(bytes(color[:3]) for color in palette)
+    trns = bytes(color[3] for color in palette)
+    png = (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", ihdr)
+        + chunk(b"PLTE", plte)
+        + chunk(b"tRNS", trns)
+        + chunk(b"IDAT", zlib.compress(bytes(raw), 9))
+        + chunk(b"IEND", b"")
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(png)
+
+
 def sha1(path: Path) -> str:
     return hashlib.sha1(path.read_bytes()).hexdigest()
 
@@ -272,41 +318,160 @@ def shift_frame(
 # optional lower shade, and two short thick horizontal black oval eyes. No
 # mouth, eye whites, pupils, or antenna. Only CLEAR/WHITE/GRAY/BLACK are used,
 # so the GB Studio sprite palette (slot 0) recolors every shape: WHITE is the
-# fill, GRAY the shade, BLACK the outline.
-PLAYER_SHAPES = ["circle", "square", "heart", "star", "triangle"]
+# fill (color 1), GRAY the shade (color 2), BLACK the outline (color 3).
+# The list order is the picker order and the player_shape (var 6) value.
+PLAYER_SHAPES = ["circle", "square", "heart", "star", "triangle", "teardrop", "oval", "blob"]
 PLAYER_FILES = {
     "circle": "player_grok.png",
     "square": "player_grok_square.png",
     "heart": "player_heart.png",
     "star": "player_star.png",
     "triangle": "player_triangle.png",
+    "teardrop": "player_teardrop.png",
+    "oval": "player_oval.png",
+    "blob": "player_blob.png",
+}
+# Row of the top of each shape's eyes on the idle frame, and the left x of
+# each 3x2 eye (mirrored about the 16px cell's centre line, x = 7.5).
+PLAYER_EYES = {
+    "circle": (8, (4, 9)),
+    "square": (8, (4, 9)),
+    "heart": (7, (4, 9)),
+    "star": (7, (4, 9)),
+    "triangle": (11, (4, 9)),
+    "teardrop": (9, (4, 9)),
+    "oval": (9, (4, 9)),
+    "blob": (8, (4, 9)),
 }
 
 
+def _star_edge(dx: float, dy: float) -> float:
+    """Distance from the star centre to its outline along (dx, dy).
+
+    The outline is the true straight-sided five-point star (outer radius R,
+    inner radius r), so the edges are straight lines, not a sawtooth in angle.
+    """
+    import math
+    R, r = 8.0, 4.2
+    a = math.atan2(dx, -dy) % (2 * math.pi / 5)
+    seg = 2 * math.pi / 5
+    # Edge from the outer point at angle 0 to the inner point at seg/2.
+    if a > seg / 2:
+        a = seg - a
+    p1 = (0.0, R)
+    p2 = (r * math.sin(seg / 2), r * math.cos(seg / 2))
+    # Intersect the ray at angle a with segment p1-p2.
+    ux, uy = math.sin(a), math.cos(a)
+    ex, ey = p2[0] - p1[0], p2[1] - p1[1]
+    det = ux * (-ey) - uy * (-ex)
+    t = (p1[0] * (-ey) - p1[1] * (-ex)) / det
+    return t
+
+
 def _inside(shape: str, x: float, y: float) -> bool:
-    """Shape test in a 16x16 cell; (x, y) is a pixel centre, body sits low."""
+    """Shape test in a 16x16 cell; (x, y) is a sample point, body sits low."""
     import math
     if shape == "circle":
         return (x - 8) ** 2 + (y - 9.5) ** 2 <= 6.0 ** 2
     if shape == "square":
         return 2 <= x <= 14 and 3.5 <= y <= 15
     if shape == "heart":
-        u, v = (x - 8) / 6.4, (8.6 - y) / 6.4
-        return (u * u + v * v - 1) ** 3 - u * u * v ** 3 <= 0
+        # Two round lobes with a centre notch over a pointed base.
+        lobe = 3.55
+        if (x - 4.75) ** 2 + (y - 6.4) ** 2 <= lobe ** 2:
+            return True
+        if (x - 11.25) ** 2 + (y - 6.4) ** 2 <= lobe ** 2:
+            return True
+        return 6.4 <= y <= 15.2 and abs(x - 8) <= (15.2 - y) * 0.84
     if shape == "star":
-        dx, dy = x - 8, y - 9.0
-        r = math.hypot(dx, dy)
-        a = math.atan2(dx, -dy)
-        k = (a % (2 * math.pi / 5)) / (2 * math.pi / 5)
-        edge = 7.4 * (1 - 0.48 * (1 - abs(2 * k - 1)))
-        return r <= edge
+        dx, dy = x - 8, y - 9.4
+        return math.hypot(dx, dy) <= _star_edge(dx, dy)
     if shape == "triangle":
         return 2.5 <= y <= 15 and abs(x - 8) <= (y - 2.0) * 0.6
+    if shape == "teardrop":
+        # Round base with a point at the top; the sides are tangent to the base.
+        cx, cy, radius, tip = 8.0, 9.9, 6.1, 1.3
+        if (x - cx) ** 2 + (y - cy) ** 2 <= radius ** 2:
+            return True
+        d = cy - tip
+        if not tip <= y <= cy:
+            return False
+        half = math.asin(radius / d)
+        return abs(x - cx) <= (y - tip) * math.tan(half)
+    if shape == "oval":
+        # Wider than tall, so it reads differently from the circle.
+        return ((x - 8) / 7.1) ** 2 + ((y - 10.0) / 5.3) ** 2 <= 1
+    if shape == "blob":
+        # Irregular rounded blob: a lumpy polar outline, wide through the
+        # eye line, with a flat base.
+        dx, dy = x - 8, y - 9.4
+        a = math.atan2(dy, dx)
+        edge = 6.5 + 0.55 * math.sin(3 * a - 0.5) + 0.35 * math.cos(2 * a + 1.1)
+        return math.hypot(dx, dy) <= edge and y <= 15.0
     raise ValueError(shape)
 
 
+# Straight-sided shapes keep the single centre sample; curved and pointed ones
+# use 4x4 coverage so their diagonal outlines step evenly.
+SUPERSAMPLED = {"heart", "star", "teardrop", "oval", "blob"}
+
+
+def _shape_mask(shape: str, dy: int) -> list[list[bool]]:
+    if shape not in SUPERSAMPLED:
+        return [[_inside(shape, x + 0.5, y + 0.5 - dy) for x in range(16)] for y in range(16)]
+    n = 4
+    mask = []
+    for y in range(16):
+        row = []
+        for x in range(16):
+            hits = sum(
+                _inside(shape, x + (sx + 0.5) / n, y + (sy + 0.5) / n - dy)
+                for sy in range(n)
+                for sx in range(n)
+            )
+            row.append(hits * 2 >= n * n)
+        mask.append(row)
+    # Drop one-pixel spurs (a pixel with at most one filled 4-neighbour) so
+    # points and corners do not leave a stray outline pixel.
+    for _ in range(2):
+        mask = [
+            [
+                mask[y][x]
+                and sum(
+                    0 <= y + oy < 16 and 0 <= x + ox < 16 and mask[y + oy][x + ox]
+                    for ox, oy in ((1, 0), (-1, 0), (0, 1), (0, -1))
+                )
+                >= 2
+                for x in range(16)
+            ]
+            for y in range(16)
+        ]
+    # Trim outline-only stubs: an outline pixel with no interior (fill) pixel
+    # among its eight neighbours would be a black stub past a point.
+    def edge_at(y: int, x: int) -> bool:
+        return any(
+            not (0 <= y + oy < 16 and 0 <= x + ox < 16 and mask[y + oy][x + ox])
+            for ox, oy in ((1, 0), (-1, 0), (0, 1), (0, -1))
+        )
+
+    interior = [[mask[y][x] and not edge_at(y, x) for x in range(16)] for y in range(16)]
+    mask = [
+        [
+            mask[y][x]
+            and any(
+                0 <= y + oy < 16 and 0 <= x + ox < 16 and interior[y + oy][x + ox]
+                for ox in (-1, 0, 1)
+                for oy in (-1, 0, 1)
+            )
+            for x in range(16)
+        ]
+        for y in range(16)
+    ]
+    return mask
+
+
 def draw_shape_bot(image, origin: int, dy: int, shape: str) -> None:
-    mask = [[_inside(shape, x + 0.5, y + 0.5 - dy) for x in range(16)] for y in range(16)]
+    mask = _shape_mask(shape, dy)
     ys = [y for y in range(16) for x in range(16) if mask[y][x]]
     top, bottom = min(ys), max(ys)
     shade_from = bottom - max(1, (bottom - top) // 5)
@@ -320,11 +485,12 @@ def draw_shape_bot(image, origin: int, dy: int, shape: str) -> None:
             )
             image[y][origin + x] = BLACK if edge else (GRAY if y >= shade_from else WHITE)
     # Eyes: two short, thick horizontal black ovals, 3x2 px each, mirrored about
-    # the sheet's centre line. At 16x16 a 3x2 block is the smallest readable oval.
-    eye_y = {"triangle": 11, "star": 7, "heart": 7, "square": 8, "circle": 8}[shape] + dy
-    for cx in (4, 9):
-        for yy, xs in ((eye_y, range(cx, cx + 3)), (eye_y + 1, range(cx, cx + 3))):
-            for xx in xs:
+    # the cell's centre line. At 16x16 a 3x2 block is the smallest readable oval.
+    eye_top, eye_xs = PLAYER_EYES[shape]
+    eye_y = eye_top + dy
+    for cx in eye_xs:
+        for yy in (eye_y, eye_y + 1):
+            for xx in range(cx, cx + 3):
                 if 0 <= yy < 16 and image[yy][origin + xx][3]:
                     image[yy][origin + xx] = BLACK
 
@@ -335,14 +501,6 @@ def paint_shape_player(shape: str):
     for frame, dy in enumerate((0, 1, 0, -1)):
         draw_shape_bot(image, frame * 16, dy, shape)
     return image
-
-
-def paint_player():
-    return paint_shape_player("circle")
-
-
-def paint_player_square():
-    return paint_shape_player("square")
 
 
 def paint_enemy() -> list[list[tuple[int, int, int, int]]]:
@@ -1449,14 +1607,50 @@ def shot_blob(suffix: str) -> list:
     return vanish_blob(suffix + "-shot", False)
 
 
+def write_shapes_sheet(path: Path) -> None:
+    """docs/shapes-sheet.png: one row per picker shape (player_shape order).
+
+    Columns: idle, walk A, walk B, jump in the Grok Bot (white) palette, then
+    the idle frame in Grok Red, Grok Yellow, and Grok Teal, as GB Studio's
+    sprite palette slot 0 would color it. Scaled 4x on a sky backdrop.
+    """
+    scale, cell, gap = 4, 16, 2
+    columns = 4 + len(GROK_COLORS) - 1
+    width = (columns * (cell + gap) + gap) * scale
+    height = (len(PLAYER_SHAPES) * (cell + gap) + gap) * scale
+    sheet = blank(width, height, SKY)
+
+    def recolor(pixel, colors):
+        if pixel == CLEAR:
+            return None
+        hex_color = colors[PLAYER_INDEXED.index(pixel)]
+        return tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4)) + (255,)
+
+    for row, shape in enumerate(PLAYER_SHAPES):
+        frames = paint_shape_player(shape)
+        cells = [(frame, GROK_COLORS[0][1]) for frame in range(4)]
+        cells += [(0, colors) for _name, colors in GROK_COLORS[1:]]
+        for column, (frame, colors) in enumerate(cells):
+            ox = (gap + column * (cell + gap)) * scale
+            oy = (gap + row * (cell + gap)) * scale
+            for y in range(cell):
+                for x in range(cell):
+                    color = recolor(frames[y][frame * cell + x], colors)
+                    if color is None:
+                        continue
+                    for sy in range(scale):
+                        for sx in range(scale):
+                            sheet[oy + y * scale + sy][ox + x * scale + sx] = color
+    write_png(path, width, height, sheet)
+
+
 def build_images() -> dict:
     sprites = ROOT / "assets" / "sprites"
     backgrounds = ROOT / "assets" / "backgrounds"
     ammo_frames = electron_total() + 1
-    write_png(sprites / "player_grok.png", 64, 16, paint_player())
-    write_png(sprites / "player_grok_square.png", 64, 16, paint_player_square())
-    for shape in PLAYER_SHAPES[2:]:
-        write_png(sprites / PLAYER_FILES[shape], 64, 16, paint_shape_player(shape))
+    for shape in PLAYER_SHAPES:
+        write_png_indexed(sprites / PLAYER_FILES[shape], 64, 16, paint_shape_player(shape), PLAYER_INDEXED)
+    write_shapes_sheet(ROOT / "docs" / "shapes-sheet.png")
     write_png(sprites / "press_start.png", PRESS_FRAMES * 16, 16, paint_press_start())
     write_png(sprites / "enemy_red_blob.png", 32, 16, paint_enemy())
     write_png(sprites / "electron.png", 16, 16, paint_electron())
@@ -2363,7 +2557,14 @@ GB Studio reads every `.png` in this folder. The Level 1 sheets below are 16x16,
 
 | File | Use |
 |------|-----|
-| player_grok.png | Grok Bot, circle shape (picker shape 0). Locked Grok Imagine style: solid fill, thin black outline, lower shade, two short thick black oval eyes; no mouth, eye whites, pupils, or antenna. Four frames: idle, walk A, walk B, jump. Left facing is mirrored. |\n| player_grok_square.png | Same style, square (shape 1). |\n| player_heart.png | Same style, heart (shape 2). |\n| player_star.png | Same style, star (shape 3). |\n| player_triangle.png | Same style, triangle (shape 4). |
+| player_grok.png | Grok Bot, circle shape (picker shape 0, the default). Locked Grok Imagine style: solid fill, thin black outline, lower shade, two short thick black oval eyes; no mouth, eye whites, pupils, or antenna. Four frames: idle, walk A, walk B, jump. Left facing is mirrored. |
+| player_grok_square.png | Same style, square (shape 1). |
+| player_heart.png | Same style, heart (shape 2). |
+| player_star.png | Same style, star (shape 3). |
+| player_triangle.png | Same style, triangle (shape 4). |
+| player_teardrop.png | Same style, teardrop (shape 5). |
+| player_oval.png | Same style, oval (shape 6). |
+| player_blob.png | Same style, irregular blob (shape 7). |
 | enemy_red_blob.png | Grok Blob. Two frames, cream eyes, black pupils, belly, brows, and feet. |
 | electron.png | Electron pickup and the projectile Grok Bot fires. |
 | silicon_chip.png | One power-up. Collecting it unlocks firing for the rest of the run. |
@@ -2372,7 +2573,7 @@ GB Studio reads every `.png` in this folder. The Level 1 sheets below are 16x16,
 
 `actor.png`, `actor_animated.png`, and `static.png` are the GB Studio blank-template placeholders. The player setting points at `player_grok.png`.
 
-All player sheets use only transparent + three indexed colors (fill, shade, outline), so the picker's color choice recolors any shape through sprite palette slot 0 instead of duplicating PNGs. Teardrop, oval, and the rest are not drawn yet. Each sheet is 8 tiles (4 frames x 2 8x16 tiles); only the active sheet is loaded per scene.
+All player sheets are palette-mode (indexed) PNGs with four entries: transparent, fill, shade, outline. The picker's color choice recolors any shape through sprite palette slot 0 instead of duplicating PNGs. Each sheet is 64x16: 4 frames x 2 8x16 tiles = 8 tiles. In a scene GB Studio reserves VRAM for one player sheet (the largest the player can be set to), and `Player: Set Sprite` loads the chosen sheet into that slot, so eight shapes do not cost 64 tiles of VRAM. `docs/shapes-sheet.png` is a contact sheet of every shape.
 
 Regenerate with `python3 scripts/build_level1.py`.
 """
