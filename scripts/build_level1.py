@@ -2505,12 +2505,16 @@ def segment_init(segment: dict) -> list:
     key = segment["key"]
     lives_symbol = f"actor_lives_{key}"
     ammo_symbol = f"actor_ammo_{key}"
+    # gbvm's vm_music_play always calls music_load -> driver_init, so playing
+    # the track that is already playing restarts it. The game has one track
+    # and never stops it, so a respawn reload (var 10 == 1) skips the event and
+    # the song carries on.
     script = [
-        event(
+        if_value(f"{key}-music-check", RESPAWN_VAR, "==", 0, [event(
             f"{key}-music",
             "EVENT_MUSIC_PLAY",
             {"musicId": MUSIC_ID, "loop": True},
-        )
+        )])
     ]
     if segment["reset"]:
         script.append(if_value(f"{key}-new-run", RESPAWN_VAR, "==", 0, [
@@ -2546,6 +2550,9 @@ def segment_init(segment: dict) -> list:
     script.append(show_ammo(f"{key}-ammo", ammo_symbol))
     script.extend(show_score(f"{key}-init", key))
     script.append(attach_fire(segment))
+    # Respawn grace: blink for its length (blink_player: 5 x 12 frames = 60),
+    # last, so the HUD and fire binding are already in place.
+    script.append(if_value(f"{key}-grace-blink", HURT_LOCK, "==", HURT_RESPAWN, blink_player(f"{key}-grace")))
     return script
 
 
