@@ -140,6 +140,8 @@ SEGMENTS = [
         "flyers": [(70, 9), (128, 8)],
         # One shooter on the high ledge; it fires a bolt at Grok Bot every 2 s.
         "turret": [(116, 9)],
+        # Level-complete car, 4 tiles wide, parked on the floor before the end.
+        "roadster": [(SEG_W - 12, FLOOR_TOP - 2)],
         "next": None,
     },
 ]
@@ -149,7 +151,7 @@ HUD_ACTORS = 3
 def segment_bodies(segment: dict) -> list[tuple[str, int, int]]:
     """Every non-HUD actor in a half as (kind, x, y)."""
     bodies = []
-    for kind in ("blobs", "coins", "chips", "electrons", "flyers", "turret"):
+    for kind in ("blobs", "coins", "chips", "electrons", "flyers", "turret", "roadster"):
         bodies.extend((kind, x, y) for x, y in segment.get(kind, []))
     return bodies
 
@@ -703,6 +705,61 @@ def paint_bolt() -> list[list[tuple[int, int, int, int]]]:
     return image
 
 
+def paint_roadster() -> list[list[tuple[int, int, int, int]]]:
+    """A generic red two-seat convertible, facing right. 32x16, original art.
+
+    No badge, logo, or wordmark. RED body (mid), CREAM glass, headlight and
+    trim (light), BLACK outline, tyres, and seats (dark).
+    """
+    image = blank(32, 16, CLEAR)
+    # Body profile per column: (top row, bottom row). Low nose on the right,
+    # open cockpit in the middle, short rear deck on the left.
+    profile = {}
+    for x in range(1, 31):
+        if x <= 3:
+            top = 9
+        elif x <= 9:
+            top = 8
+        elif x <= 18:
+            top = 9  # cockpit sill
+        elif x <= 23:
+            top = 9
+        else:
+            top = 10 + (x - 24) // 3
+        profile[x] = (top, 13)
+    for x, (top, bottom) in profile.items():
+        for y in range(top, bottom + 1):
+            edge = y in (top, bottom) or x in (1, 30)
+            image[y][x] = BLACK if edge else RED
+    # Side trim line and door seam.
+    for x in range(3, 29):
+        if image[11][x] == RED:
+            image[11][x] = CREAM
+    for y in range(10, 13):
+        image[y][15] = BLACK
+    # Two seat backs in the open cockpit, and a raked windshield frame.
+    for x0 in (10, 14):
+        for y in range(6, 9):
+            for x in range(x0, x0 + 2):
+                image[y][x] = BLACK
+    for index, y in enumerate(range(5, 9)):
+        image[y][19 + index] = BLACK
+        if index < 3:
+            image[y][20 + index] = CREAM
+    # Headlight and tail light.
+    image[11][29] = CREAM
+    image[10][2] = CREAM
+    # Wheels with a light hub.
+    for cx in (7, 24):
+        for y in range(11, 16):
+            for x in range(cx - 3, cx + 3):
+                if (x + 0.5 - cx) ** 2 + (y + 0.5 - 13.5) ** 2 <= 2.6**2:
+                    image[y][x] = BLACK
+        image[13][cx - 1] = CREAM
+        image[13][cx] = CREAM
+    return image
+
+
 def coin_total() -> int:
     return sum(len(segment["coins"]) for segment in SEGMENTS)
 
@@ -1069,7 +1126,7 @@ def tile_ref(name: str, x: int, slice_x: int, palette_index: int = 0) -> dict:
 # Scene sprite palette slots. In color mode GB Studio 4 reads the palette
 # from each sprite tile's paletteIndex (compileSprites.ts makeProps), not from
 # the actor's paletteId. Slot 0 is Grok Bot; the picker color swaps slot 0.
-SLOT = {"enemy": 1, "lives": 1, "electron": 2, "ammo": 2, "chip": 3, "coin": 4, "coinhud": 4, "flyer": 5, "turret": 3, "bolt": 1}
+SLOT = {"enemy": 1, "lives": 1, "electron": 2, "ammo": 2, "chip": 3, "coin": 4, "coinhud": 4, "flyer": 5, "turret": 3, "bolt": 1, "roadster": 1}
 
 
 def frame_of(name: str, slice_x: int) -> dict:
@@ -1098,6 +1155,7 @@ def sprite_resource(
     animation_type: str,
     animations: list[dict],
     num_tiles: int,
+    canvas_width: int = 16,
 ) -> dict:
     return {
         "_resourceType": "sprite",
@@ -1116,11 +1174,11 @@ def sprite_resource(
         "numTiles": num_tiles,
         "canvasOriginX": 0,
         "canvasOriginY": 0,
-        "canvasWidth": 16,
+        "canvasWidth": canvas_width,
         "canvasHeight": 16,
         "boundsX": 0,
         "boundsY": 0,
-        "boundsWidth": 16,
+        "boundsWidth": canvas_width,
         "boundsHeight": 16,
         "animSpeed": 8 if animation_type == "platform_player" else 15,
         "filename": filename,
@@ -1149,6 +1207,18 @@ def player_animations(prefix: str = "") -> list[dict]:
         {"id": uid(f"{p}-anim-climb"), "frames": [idle]},
         empty_frame(f"{p}-anim-spare"),
     ]
+
+
+def wide_animation(name: str, width: int) -> list[dict]:
+    """One frame built from width/8 8x16 tiles side by side."""
+    palette_index = SLOT.get(name, 0)
+    frame = {
+        "id": uid(name + "-f0"),
+        "tiles": [tile_ref(f"{name}-t{index}", index * 8, index * 8, palette_index) for index in range(width // 8)],
+    }
+    animations = [{"id": uid(name + "-anim0"), "frames": [frame]}]
+    animations.extend(empty_frame(f"{name}-anim{index}") for index in range(1, 8))
+    return animations
 
 
 def fixed_animation(name: str) -> list[dict]:
@@ -1237,6 +1307,7 @@ def actor(
     animate: bool = True,
     pinned: bool = False,
     collision_group: str = "1",
+    move_speed: int = 1,
 ) -> dict:
     return {
         "_resourceType": "actor",
@@ -1253,7 +1324,7 @@ def actor(
         "spriteSheetId": uid(sprite_symbol),
         "paletteId": uid("palette-" + palette_name),
         "direction": "right",
-        "moveSpeed": 1,
+        "moveSpeed": move_speed,
         # 255 is GB Studio's "None" animation speed (ANIM_PAUSED). Without it the
         # engine cycles every multi-frame sheet regardless of "animate", so HUD
         # counters and the Press Start strips scrolled through their frames.
@@ -1754,6 +1825,44 @@ def attach_fire(segment: dict) -> dict:
     )
 
 
+def roadster_script(name: str) -> list:
+    """Level complete: hop in, drive off, lift off up and away, LEVEL CLEAR."""
+
+    def drive(tag: str, dx: int, dy: int, kind: str) -> dict:
+        return event(
+            f"{name}-{tag}",
+            "EVENT_ACTOR_MOVE_RELATIVE",
+            {
+                "actorId": "$self$",
+                "x": {"type": "number", "value": dx},
+                "y": {"type": "number", "value": dy},
+                "units": "tiles",
+                "moveType": kind,
+                "useCollisions": False,
+                "collideWith": [],
+            },
+        )
+
+    return [
+        event(f"{name}-once", "EVENT_ACTOR_COLLISIONS_DISABLE", {"actorId": "$self$"}),
+        event(f"{name}-freeze", "EVENT_PLATFORMER_STATE_SET", {"state": "blank"}),
+        set_engine(f"{name}-stop-vx", "plat_vel_x", 0),
+        set_engine(f"{name}-stop-vy", "plat_vel_y", 0),
+        event(f"{name}-board", "EVENT_ACTOR_HIDE", {"actorId": "player"}),
+        beep(f"{name}-door", 6),
+        wait_frames(f"{name}-start", 20),
+        beep(f"{name}-engine", 3),
+        drive("roll", 3, 0, "horizontal"),
+        beep(f"{name}-lift", 9),
+        drive("climb", 2, -3, "diagonal"),
+        drive("away", 2, -12, "diagonal"),
+        event(f"{name}-gone", "EVENT_ACTOR_HIDE", {"actorId": "$self$"}),
+        wait_frames(f"{name}-beat", 20),
+        event(f"{name}-text", "EVENT_TEXT", {"text": "LEVEL CLEAR"}),
+        *exit_script(),
+    ]
+
+
 def exit_script() -> list:
     return [switch_scene("exit-clear", "scene_level1_clear", 2, CLEAR_TOP - 2)]
 
@@ -1938,6 +2047,7 @@ def build_images() -> dict:
     write_png(sprites / "coin.png", 16, 16, paint_coin())
     write_png(sprites / "flyer.png", 32, 16, paint_flyer())
     write_png(sprites / "turret.png", 16, 16, paint_turret())
+    write_png(sprites / "roadster.png", 32, 16, paint_roadster())
     write_png(sprites / "bolt.png", 16, 16, paint_bolt())
     write_png(sprites / "coin_hud.png", (coin_total() + 1) * 16, 16, paint_coin_hud())
     write_png(sprites / "lives.png", 64, 16, paint_lives())
@@ -2161,6 +2271,25 @@ def write_segment(
             ),
         )
         next_index += 1
+    for x, y in segment.get("roadster", []):
+        write_json(
+            actor_dir / "roadster.gbsres",
+            actor(
+                name="Roadster",
+                symbol=f"actor_{key}-roadster",
+                index=next_index,
+                x=x,
+                y=y,
+                sprite_symbol="sprite_roadster",
+                palette_name="Blob Red",
+                script=roadster_script(f"{key}-roadster"),
+                animate=False,
+                # Group 2: touched by the player, ignored by electron shots.
+                collision_group="2",
+                move_speed=2,
+            ),
+        )
+        next_index += 1
     for chip_index, (chip_x, chip_y) in enumerate(segment["chips"], start=1):
         # The first chip keeps its original id and file name.
         suffix = f"{key}-chip" if chip_index == 1 else f"{key}-chip{chip_index}"
@@ -2203,9 +2332,12 @@ def write_segment(
     gate_name = "Continue" if segment["next"] else "Exit"
     gate_symbol = f"trigger_continue_{key}" if segment["next"] else "trigger_exit"
     gate_file = "continue.gbsres" if segment["next"] else "exit.gbsres"
+    # With a roadster the old exit stays only as a 2-tile fallback at the
+    # very end, in case Grok Bot jumps clean over the car.
+    gate_x, gate_w = (SEG_W - 2, 2) if segment.get("roadster") else (SEG_W - 4, 4)
     write_json(
         trigger_dir / gate_file,
-        trigger(gate_name, gate_symbol, trigger_index, SEG_W - 4, 9, 4, 6, gate_script),
+        trigger(gate_name, gate_symbol, trigger_index, gate_x, 9, gate_w, 6, gate_script),
     )
 
 
@@ -2280,6 +2412,21 @@ def build_resources(collisions: dict) -> None:
             animation_type="fixed",
             animations=fixed_animation("coin"),
             num_tiles=2,
+        ),
+    )
+    write_json(
+        sprites / "roadster.png.gbsres",
+        sprite_resource(
+            name="roadster",
+            symbol="sprite_roadster",
+            filename="roadster.png",
+            image_path=sprites / "roadster.png",
+            width=32,
+            height=16,
+            animation_type="fixed",
+            animations=wide_animation("roadster", 32),
+            num_tiles=4,
+            canvas_width=32,
         ),
     )
     for name in ("turret", "bolt"):
