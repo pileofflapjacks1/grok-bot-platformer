@@ -800,9 +800,44 @@ def paint_roadster_flip() -> list[list[tuple[int, int, int, int]]]:
     for y in range(16):
         for x in range(32):
             base[16 + y][x] = car[y][x]
-    image = blank(width * len(KICKFLIP_ANGLES), height, CLEAR)
     # Centre of the car's opaque area (rows 21-31 of the cell, cols 1-30).
     ccx, ccy = 15.5, 26.0
+    # The car is about 33 px along its diagonal, more than the 32 px cell, so
+    # the tilted frames are drawn slightly smaller: the largest scale (in
+    # 0.05 steps) at which no rotated frame touches the cell edge.
+    for scale in [1 - step * 0.05 for step in range(0, 7)]:
+        image = _flip_frames(base, ccx, ccy, scale, math)
+        # Search with a 2 px safety ring, so even a tip that nearest-pixel
+        # sampling would round outward stays clear of the edge.
+        if not flip_edge_problems(image, ring=2):
+            return image
+    raise SystemExit(f"kickflip frames touch the canvas edge: {flip_edge_problems(image)}")
+
+
+def flip_edge_problems(image, ring: int = 1) -> list[str]:
+    """Frames with an opaque pixel on a 32x32 cell edge.
+
+    Frame 0 (parked) may touch the bottom edge only: its wheels stand on the
+    ground there, as on the old 32x16 sheet.
+    """
+    width, height = ROADSTER_CANVAS
+    problems = []
+    for index in range(len(KICKFLIP_ANGLES)):
+        ox = index * width
+        # Frame 0 is the unrotated art (1 px from the sides by design).
+        band = range(1 if index == 0 else ring)
+        edges = [(y, x) for y in range(height) for r in band for x in (r, width - 1 - r)]
+        edges += [(r, x) for r in band for x in range(width)]
+        if index != 0:
+            edges += [(height - 1 - r, x) for r in band for x in range(width)]
+        if any(image[y][ox + x][3] for y, x in edges):
+            problems.append(f"frame {index} ({KICKFLIP_ANGLES[index]} deg)")
+    return problems
+
+
+def _flip_frames(base, ccx: float, ccy: float, scale: float, math) -> list:
+    width, height = ROADSTER_CANVAS
+    image = blank(width * len(KICKFLIP_ANGLES), height, CLEAR)
     for index, angle in enumerate(KICKFLIP_ANGLES):
         ox = index * width
         if angle == 0:
@@ -816,7 +851,7 @@ def paint_roadster_flip() -> list[list[tuple[int, int, int, int]]]:
             for x in range(width):
                 # Destination is centred on the canvas centre (lifted), source
                 # on the car's own centre.
-                dx, dy = x + 0.5 - 16, y + 0.5 - 16
+                dx, dy = (x + 0.5 - 16) / scale, (y + 0.5 - 16) / scale
                 sx = cos_a * dx - sin_a * dy + ccx
                 sy = sin_a * dx + cos_a * dy + ccy
                 ix, iy = int(math.floor(sx)), int(math.floor(sy))
@@ -2455,6 +2490,8 @@ def build_images() -> dict:
     roadster = paint_roadster()
     check_wide_coverage("roadster", roadster, 32)
     flip = paint_roadster_flip()
+    if flip_edge_problems(flip):
+        raise SystemExit(f"roadster kickflip touches the canvas edge: {flip_edge_problems(flip)}")
     write_png(sprites / "roadster.png", 32 * len(KICKFLIP_ANGLES), 32, flip)
     write_png(sprites / "bolt.png", 16, 16, paint_bolt())
     write_png(sprites / "lives.png", 64, 16, paint_lives())
