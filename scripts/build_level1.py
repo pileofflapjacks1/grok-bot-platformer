@@ -1935,8 +1935,13 @@ def lose_power(name: str, segment: dict) -> list:
     ]
 
 
-# hurt_lock values: 0 free, 1 a hit script is running, 2 held by a pit fall
-# or the roadster cutscene (released only by that script or scene init).
+# hurt_lock (variable 5) values, the full set:
+#   0 free; 1 a hit script is running; 2 (HURT_HOLD) a pit fall or the
+#   roadster cutscene (released only by that script or scene init);
+#   3 (HURT_LIFE) a hit is taking a life; 4 (HURT_PIT_FREE) a pit started
+#   during a life-taking hit; 5 (HURT_RESPAWN) respawn grace after a reload,
+#   released by timer 1; ROADSTER_HOLD (10) .. ROADSTER_HOLD + 60 the roadster
+#   countdown. Hits only start from 0; every scene init rewrites the lock.
 HURT_HOLD = 2
 # 3: a hit script is taking a life (claimed from 1 just before the
 # decrement). 4: a pit started while a hit was taking a life, so the pit
@@ -1985,9 +1990,10 @@ def hurt_steps(suffix: str, segment: dict, held: bool = False) -> list:
     # power-on, for about 9 minutes of every 18) every hurt was skipped:
     # Grok Bot walked through blobs, bats, towers and bolts. Each scene init
     # resets the lock, so a script cut short by a scene switch cannot leave it
-    # stuck. Values: 0 free, 1 this kind of hit script, HURT_HOLD (2) a pit
-    # fall or the roadster; a hit only releases 1, the pit releases its own 2
-    # after the respawn grace.
+    # stuck. Values: see the hurt_lock table above HURT_HOLD. A hit takes 0 -> 1,
+    # claims 1 -> HURT_LIFE for a life loss, and only ever releases its own 1;
+    # a pit or the roadster releases its own value, and HURT_RESPAWN (5) is
+    # released by the init's timer 1.
     lives_symbol = f"actor_lives_{segment['key']}"
     unpowered = _unpowered_hit(suffix, segment, lives_symbol)
     return [unless_done(f"{suffix}-hurt-done-check", [
