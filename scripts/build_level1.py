@@ -77,6 +77,14 @@ SCENE_GAP = 80
 LIVES_AT = (1, 0)
 AMMO_AT = (16, 0)
 POWER_VAR = "9"
+SCORE_VAR = "8"
+# Score HUD: three pinned actors at tiles 7, 8 and 9-10 on the HUD row show
+# thousands, hundreds, and "tens + a fixed 0" (every award is a multiple of
+# 10). The single-digit frames leave the right 8 px blank, which GB Studio
+# drops from the frame, so those two actors cost 1 hardware sprite each.
+SCORE_AT = 7
+SCORE_DIGITS = (("k", 1000, "sprite_score_digit"), ("h", 100, "sprite_score_digit"), ("t", 10, "sprite_score_tens"))
+POINTS = {"blob": 100, "flyer": 200, "turret": 500, "electron": 10, "chip": 1000, "clear": 1000}
 VIOLET = (152, 160, 224, 255)  # mid band: the body slot of Flyer Violet
 # Screen bands. Speeds are GB Studio parallax values: 0 is normal, 2 is 1/4, 4 is 1/16.
 # Solids stay at row 10 and below so the floor scrolls with the player.
@@ -142,7 +150,7 @@ SEGMENTS = [
         "next": None,
     },
 ]
-HUD_ACTORS = 2
+HUD_ACTORS = 2 + 3  # lives, ammo, three score digits
 
 
 def segment_bodies(segment: dict) -> list[tuple[str, int, int]]:
@@ -738,6 +746,29 @@ def paint_roadster() -> list[list[tuple[int, int, int, int]]]:
     return image
 
 
+def paint_score_digits(with_zero: bool) -> list[list[tuple[int, int, int, int]]]:
+    """Ten 16x16 frames: a light 2x digit with a dark outline in the left 8 px.
+
+    with_zero adds a fixed "0" in the right 8 px (the score's last digit).
+    Electron Blue palette: E_WHITE is light, BLUE is dark.
+    """
+    image = blank(160, 16, CLEAR)
+    for value in range(10):
+        origin = value * 16
+        cells = [(origin + 1, value)] + ([(origin + 9, 0)] if with_zero else [])
+        for ox, digit in cells:
+            draw_digit(image, ox, 3, digit, E_WHITE, 2)
+        # 1 px dark outline around the light pixels, kept inside each 8 px cell.
+        light = {(x, y) for y in range(16) for x in range(origin, origin + 16) if image[y][x] == E_WHITE}
+        for x, y in light:
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nx, ny = x + dx, y + dy
+                same_cell = (nx - origin) // 8 == (x - origin) // 8
+                if 0 <= ny < 16 and same_cell and (nx, ny) not in light:
+                    image[ny][nx] = BLUE
+    return image
+
+
 def paint_chip() -> list[list[tuple[int, int, int, int]]]:
     """A silicon package: silver pins, dark body, black die."""
     image = blank(16, 16, CLEAR)
@@ -1081,7 +1112,7 @@ def tile_ref(name: str, x: int, slice_x: int, palette_index: int = 0) -> dict:
 # Scene sprite palette slots. In color mode GB Studio 4 reads the palette
 # from each sprite tile's paletteIndex (compileSprites.ts makeProps), not from
 # the actor's paletteId. Slot 0 is Grok Bot; the picker color swaps slot 0.
-SLOT = {"enemy": 1, "lives": 1, "electron": 2, "ammo": 2, "chip": 3, "flyer": 5, "turret": 3, "bolt": 1, "roadster": 1}
+SLOT = {"scoredigit": 2, "scoretens": 2, "enemy": 1, "lives": 1, "electron": 2, "ammo": 2, "chip": 3, "flyer": 5, "turret": 3, "bolt": 1, "roadster": 1}
 
 
 def frame_of(name: str, slice_x: int) -> dict:
@@ -1602,6 +1633,55 @@ def tower_script(suffix: str, segment: dict) -> list:
     return hurt_steps(suffix, segment)
 
 
+def score_digit_value(place: int) -> dict:
+    """(score / place) % 10 as a GB Studio script value."""
+    return {
+        "type": "mod",
+        "valueA": {
+            "type": "div",
+            "valueA": {"type": "variable", "value": SCORE_VAR},
+            "valueB": {"type": "number", "value": place},
+        },
+        "valueB": {"type": "number", "value": 10},
+    }
+
+
+def show_score(name: str, key: str) -> list:
+    return [
+        event(
+            f"{name}-score-{tag}",
+            "EVENT_ACTOR_SET_FRAME",
+            {"actorId": uid(f"actor_score_{tag}_{key}"), "frame": score_digit_value(place)},
+        )
+        for tag, place, _sprite in SCORE_DIGITS
+    ]
+
+
+def add_score(name: str, key: str, points: int) -> list:
+    return [
+        event(
+            f"{name}-score-add",
+            "EVENT_SET_VALUE",
+            {
+                "variable": SCORE_VAR,
+                "value": {
+                    "type": "add",
+                    "valueA": {"type": "variable", "value": SCORE_VAR},
+                    "valueB": {"type": "number", "value": points},
+                },
+            },
+        ),
+        *show_score(f"{name}-hud", key),
+    ]
+
+
+def points_for(suffix: str) -> int:
+    for kind, points in POINTS.items():
+        if f"-{kind}" in suffix:
+            return points
+    return 0
+
+
 def vanish_blob(suffix: str, bounce: bool) -> list:
     # Hide first so the sprite is gone even if deactivate ends the script.
     steps = [
@@ -1616,6 +1696,8 @@ def vanish_blob(suffix: str, bounce: bool) -> list:
     ]
     if bounce:
         steps.append(event(f"blob-bounce-{suffix}", "EVENT_PLAYER_BOUNCE", {"height": "medium"}))
+    # Suffixes look like "hills-blob3-above": the half's key, then the kind.
+    steps.extend(add_score(f"blob-{suffix}", suffix.split("-")[0], points_for(suffix)))
     steps.append(deactivate(f"blob-stomp-hide-{suffix}"))
     return steps
 
@@ -1744,6 +1826,7 @@ def electron_script(name: str, ammo_symbol: str) -> list:
     return [
         event(f"{name}-inc", "EVENT_INC_VALUE", {"variable": "0"}),
         show_counter(f"{name}-ammo", ammo_symbol, "0"),
+        *add_score(name, name.split("-")[0], POINTS["electron"]),
         beep(f"{name}-sound", 7),
         deactivate(f"{name}-hide"),
     ]
@@ -1756,6 +1839,7 @@ def chip_script(name: str) -> list:
         set_number(f"{name}-flag", "2", 1),
         set_number(f"{name}-power", POWER_VAR, 1),
         *player_palette_events(f"{name}-pal"),
+        *add_score(name, name.split("-")[0], POINTS["chip"]),
         beep(f"{name}-sound", 10),
         deactivate(f"{name}-hide"),
     ]
@@ -1989,6 +2073,7 @@ def segment_init(segment: dict) -> list:
             [
                 set_number(f"{key}-electrons", "0", 0),
                 set_number(f"{key}-power", POWER_VAR, 0),
+                set_number(f"{key}-score", SCORE_VAR, 0),
                 set_number(f"{key}-lives", "1", 3),
                 set_number(f"{key}-chip", "2", 0),
                 set_number(f"{key}-hits", "4", 0),
@@ -2000,6 +2085,7 @@ def segment_init(segment: dict) -> list:
     script.extend(apply_player_choice(key))
     script.append(show_lives(f"{key}-hearts", lives_symbol))
     script.append(show_ammo(f"{key}-ammo", ammo_symbol))
+    script.extend(show_score(f"{key}-init", key))
     script.append(attach_fire(segment))
     return script
 
@@ -2059,6 +2145,8 @@ def build_images() -> dict:
     write_png(sprites / "electron.png", 16, 16, paint_electron())
     write_png(sprites / "silicon_chip.png", 16, 16, paint_chip())
     write_png(sprites / "flyer.png", 32, 16, paint_flyer())
+    write_png(sprites / "score_digit.png", 160, 16, paint_score_digits(False))
+    write_png(sprites / "score_tens.png", 160, 16, paint_score_digits(True))
     write_png(sprites / "turret.png", 16, 16, paint_turret())
     write_png(sprites / "roadster.png", 32, 16, paint_roadster())
     write_png(sprites / "bolt.png", 16, 16, paint_bolt())
@@ -2180,6 +2268,24 @@ def write_segment(
         ),
     )
     next_index += 1
+    for offset, (tag, _place, sprite) in enumerate(SCORE_DIGITS):
+        write_json(
+            actor_dir / f"score_{tag}.gbsres",
+            actor(
+                name=f"Score {tag}",
+                symbol=f"actor_score_{tag}_{key}",
+                index=next_index,
+                x=SCORE_AT + offset,
+                y=0,
+                sprite_symbol=sprite,
+                palette_name="Electron Blue",
+                script=[],
+                animate=False,
+                pinned=True,
+                collision_group="",
+            ),
+        )
+        next_index += 1
     for index, (x, y) in enumerate(segment["blobs"], start=1):
         suffix = f"{key}-blob{index}"
         write_json(
@@ -2412,6 +2518,21 @@ def build_resources(collisions: dict) -> None:
                 num_tiles=2,
                 # The bolt is a ~7 px ball: an 8x8 centred box, so near misses miss.
                 bounds=(4, 4, 8, 8) if name == "bolt" else None,
+            ),
+        )
+    for name, tag in (("score_digit", "scoredigit"), ("score_tens", "scoretens")):
+        write_json(
+            sprites / f"{name}.png.gbsres",
+            sprite_resource(
+                name=name,
+                symbol=f"sprite_{name}",
+                filename=f"{name}.png",
+                image_path=sprites / f"{name}.png",
+                width=160,
+                height=16,
+                animation_type="fixed",
+                animations=frames_animation(tag, 10),
+                num_tiles=10 if name == "score_digit" else 20,
             ),
         )
     write_json(
@@ -3106,6 +3227,12 @@ def patch_project() -> None:
                     "type": "number",
                 },
                 {
+                    "id": SCORE_VAR,
+                    "name": "score",
+                    "symbol": "var_score",
+                    "type": "number",
+                },
+                {
                     "id": POWER_VAR,
                     "name": "powered",
                     "symbol": "var_powered",
@@ -3212,6 +3339,9 @@ def scanline_peak(segment: dict) -> int:
         for _x, y in hud:
             rows[y] += 2
             rows[y + 1] += 2
+        # Score digits: 1 + 1 + 2 hardware sprites on the HUD row.
+        rows[0] += 4
+        rows[1] += 4
         bolts = 0
         for kind, x, y in segment_bodies(segment):
             reach = PATROL.get(kind, 0)
