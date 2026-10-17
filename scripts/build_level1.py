@@ -1633,7 +1633,7 @@ def turret_update(suffix: str) -> list:
     # (the camera follows the player), so it never shoots from off screen.
     return [
         wait_frames(f"{suffix}-reload", 120),
-        event(
+        unless_done(f"{suffix}-fire-done-check", [event(
             f"{suffix}-in-frame",
             "EVENT_IF_ACTOR_DISTANCE_FROM_ACTOR",
             {
@@ -1650,7 +1650,7 @@ def turret_update(suffix: str) -> list:
                 ],
                 "false": [],
             },
-        ),
+        )]),
     ]
 
 
@@ -1749,7 +1749,9 @@ def lose_power(name: str, segment: dict) -> list:
         show_ammo(f"{name}-unpower-ammo-hud", f"actor_ammo_{segment['key']}"),
         *player_palette_events(f"{name}-unpower-pal"),
         beep(f"{name}-unpower-sound", 3),
-        event(f"{name}-unpower-knock", "EVENT_PLATFORMER_STATE_SET", {"state": "knockback"}),
+        unless_done(f"{name}-unpower-knock-check", [
+            event(f"{name}-unpower-knock", "EVENT_PLATFORMER_STATE_SET", {"state": "knockback"})
+        ]),
         *blink_player(f"{name}-unpower"),
     ]
 
@@ -1757,6 +1759,14 @@ def lose_power(name: str, segment: dict) -> list:
 # hurt_lock values: 0 free, 1 a hit script is running, 2 held by a pit fall
 # or the roadster cutscene (released only by that script or scene init).
 HURT_HOLD = 2
+# Variable 3: 1 once the roadster has been touched. Every hurt path checks it
+# first, and again right before knockback (a hit script already running when
+# the roadster starts must not knock the player out of the cutscene).
+LEVEL_DONE = "3"
+
+
+def unless_done(name: str, steps: list) -> dict:
+    return if_value(name, LEVEL_DONE, "==", 0, steps)
 HURT_LOCK = "5"
 HURT_GRACE_FRAMES = 60
 
@@ -1775,7 +1785,7 @@ def hurt_steps(suffix: str, segment: dict) -> list:
     # fall or the roadster; a hit only releases 1, the pit releases its own 2
     # after the respawn grace.
     lives_symbol = f"actor_lives_{segment['key']}"
-    return [
+    return [unless_done(f"{suffix}-hurt-done-check", [
         if_value(
             f"{suffix}-hurt-ready",
             HURT_LOCK,
@@ -1785,11 +1795,13 @@ def hurt_steps(suffix: str, segment: dict) -> list:
             + [if_value(f"{suffix}-if-powered", POWER_VAR, "==", 1, lose_power(suffix, segment), [
                 event(f"{suffix}-hit-inc", "EVENT_INC_VALUE", {"variable": "4"}),
                 beep(f"{suffix}-hurt-sound", 2),
-                event(
-                    f"{suffix}-knockback",
-                    "EVENT_PLATFORMER_STATE_SET",
-                    {"state": "knockback"},
-                ),
+                unless_done(f"{suffix}-knockback-check", [
+                    event(
+                        f"{suffix}-knockback",
+                        "EVENT_PLATFORMER_STATE_SET",
+                        {"state": "knockback"},
+                    )
+                ]),
                 shake(f"{suffix}-hurt-shake", 0.2, 3),
                 if_value(
                     f"{suffix}-hit-check",
@@ -1812,7 +1824,7 @@ def hurt_steps(suffix: str, segment: dict) -> list:
             # and a hit's grace that outlives a respawn must not cut it short.
             + [if_value(f"{suffix}-hurt-unlock-check", HURT_LOCK, "==", 1, [set_number(f"{suffix}-hurt-unlock", HURT_LOCK, 0)])],
         )
-    ]
+    ])]
 
 
 def enemy_script(suffix: str, segment: dict) -> list:
@@ -1947,7 +1959,42 @@ def attach_fire(segment: dict, prefix: str | None = None) -> dict:
     )
 
 
-def roadster_script(name: str) -> list:
+def enemy_symbols(segment: dict) -> list[str]:
+    key = segment["key"]
+    return [
+        f"actor_{key}-{kind}{index + 1}"
+        for field, kind in (("blobs", "blob"), ("flyers", "flyer"), ("turret", "turret"))
+        for index in range(len(segment.get(field, [])))
+    ]
+
+
+def clear_hazards(name: str, segment: dict) -> list:
+    """Level done: no enemy, tower or bolt may touch the player any more.
+
+    LEVEL_DONE=1 makes every hurt path a no-op (checked first, and again
+    before knockback). Disabling the player's collisions clears
+    ACTOR_FLAG_COLLISION, which gbvm's projectile loop tests before a
+    player-mask bolt can hit (projectiles.c:121), so bolts already in flight
+    pass through. Deactivating each enemy terminates its update script
+    (towers stop firing) and detaches its hit script (actor.c:276-281); they
+    are hidden and their collisions disabled too, in case the engine's
+    on-screen activation brings one back.
+    """
+    steps = [
+        set_number(f"{name}-done", LEVEL_DONE, 1),
+        event(f"{name}-player-nocollide", "EVENT_ACTOR_COLLISIONS_DISABLE", {"actorId": "player"}),
+    ]
+    for symbol in enemy_symbols(segment):
+        tag = symbol.split("-")[-1]
+        steps += [
+            event(f"{name}-{tag}-nocollide", "EVENT_ACTOR_COLLISIONS_DISABLE", {"actorId": uid(symbol)}),
+            event(f"{name}-{tag}-hide", "EVENT_ACTOR_HIDE", {"actorId": uid(symbol)}),
+            event(f"{name}-{tag}-off", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(symbol)}),
+        ]
+    return steps
+
+
+def roadster_script(name: str, segment: dict) -> list:
     """Level complete: hop in, drive off, lift off up and away, LEVEL CLEAR."""
 
     def drive(tag: str, dx: int, dy: int, kind: str) -> dict:
@@ -1966,6 +2013,7 @@ def roadster_script(name: str) -> list:
         )
 
     return [
+        set_number(f"{name}-done-first", LEVEL_DONE, 1),
         event(f"{name}-once", "EVENT_ACTOR_COLLISIONS_DISABLE", {"actorId": "$self$"}),
         event(f"{name}-freeze", "EVENT_PLATFORMER_STATE_SET", {"state": "blank"}),
         # Hold the hurt lock for the whole cutscene (like the pit): a bolt
@@ -1982,6 +2030,7 @@ def roadster_script(name: str) -> list:
         set_engine(f"{name}-stop-vx", "plat_vel_x", 0),
         set_engine(f"{name}-stop-vy", "plat_vel_y", 0),
         no_fire(f"{name}-nofire"),
+        *clear_hazards(name, segment),
         event(f"{name}-board", "EVENT_ACTOR_HIDE", {"actorId": "player"}),
         beep(f"{name}-door", 6),
         event(
@@ -1997,6 +2046,9 @@ def roadster_script(name: str) -> list:
             {
                 "true": [
                     event(f"{name}-hide-again", "EVENT_ACTOR_HIDE", {"actorId": "player"}),
+                    # Re-assert blank every frame: a hit script that was
+                    # already past its checks could still set knockback.
+                    event(f"{name}-blank-again", "EVENT_PLATFORMER_STATE_SET", {"state": "blank"}),
                     wait_frames(f"{name}-hide-tick", 1),
                     event(f"{name}-hide-count", "EVENT_DEC_VALUE", {"variable": HURT_LOCK}),
                 ]
@@ -2163,8 +2215,11 @@ def segment_init(segment: dict) -> list:
                 set_engine(f"{key}-jump", "plat_jump_vel", BASE_JUMP),
             ]
         )
-    # Both halves clear the hurt lock (see hurt_steps).
+    # Both halves clear the hurt lock (see hurt_steps) and the level-done
+    # flag, and make sure the player can be hit again.
     script.append(set_number(f"{key}-hurt", HURT_LOCK, 0))
+    script.append(set_number(f"{key}-not-done", LEVEL_DONE, 0))
+    script.append(event(f"{key}-player-collide", "EVENT_ACTOR_COLLISIONS_ENABLE", {"actorId": "player"}))
     script.extend(apply_player_choice(key))
     script.append(show_lives(f"{key}-hearts", lives_symbol))
     script.append(show_ammo(f"{key}-ammo", ammo_symbol))
@@ -2448,7 +2503,7 @@ def write_segment(
                 y=y,
                 sprite_symbol="sprite_roadster",
                 palette_name="Roadster White",
-                script=roadster_script(f"{key}-roadster"),
+                script=roadster_script(f"{key}-roadster", segment),
                 animate=False,
                 # Group 2: touched by the player, ignored by electron shots.
                 collision_group="2",
@@ -3286,6 +3341,12 @@ def patch_project() -> None:
                     "id": "2",
                     "name": "chip",
                     "symbol": "var_chip",
+                    "type": "number",
+                },
+                {
+                    "id": LEVEL_DONE,
+                    "name": "level_done",
+                    "symbol": "var_level_done",
                     "type": "number",
                 },
                 {
