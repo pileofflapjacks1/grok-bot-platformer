@@ -3446,6 +3446,8 @@ def lock_dpad(name: str) -> list:
 def title_script() -> list:
     return [
         hide_player("title-hide-player"),
+        # Belt and braces: a fresh run must never see a stale respawn flag.
+        set_number("title-respawning-clear", RESPAWN_VAR, 0),
         *lock_dpad("title"),
         # Bound first, so Start or A works before the blink or the song.
         input_script(
