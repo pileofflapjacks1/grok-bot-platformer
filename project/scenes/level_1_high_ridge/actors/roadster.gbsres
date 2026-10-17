@@ -42,7 +42,7 @@
         "variable": "5",
         "value": {
           "type": "number",
-          "value": 2
+          "value": 62
         }
       }
     },
@@ -97,18 +97,53 @@
       }
     },
     {
-      "id": "34c97a7b-1aa2-5221-9173-8bbf9fe79ad0",
-      "command": "EVENT_WAIT",
+      "id": "498095f1-acd8-5465-ac1b-ec112eed6be1",
+      "command": "EVENT_LOOP_WHILE",
       "args": {
-        "units": "frames",
-        "frames": {
-          "type": "number",
-          "value": 20
-        },
-        "time": {
-          "type": "number",
-          "value": 0.33
+        "condition": {
+          "type": "gt",
+          "valueA": {
+            "type": "variable",
+            "value": "5"
+          },
+          "valueB": {
+            "type": "number",
+            "value": 2
+          }
         }
+      },
+      "children": {
+        "true": [
+          {
+            "id": "b4b80ace-e84b-54b0-8b8e-f41764ca7420",
+            "command": "EVENT_ACTOR_HIDE",
+            "args": {
+              "actorId": "player"
+            }
+          },
+          {
+            "id": "8a4abe87-9d3f-51f5-a3c4-72b236cc205a",
+            "command": "EVENT_WAIT",
+            "args": {
+              "units": "frames",
+              "frames": {
+                "type": "number",
+                "value": 1
+              },
+              "time": {
+                "type": "number",
+                "value": 0.02
+              }
+            }
+          },
+          {
+            "id": "44993ae4-5311-5eb9-9e35-1315a4ee6001",
+            "command": "EVENT_DEC_VALUE",
+            "args": {
+              "variable": "5"
+            }
+          }
+        ]
       }
     },
     {

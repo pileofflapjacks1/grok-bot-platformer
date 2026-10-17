@@ -1281,34 +1281,57 @@
                               }
                             },
                             {
-                              "id": "02f5cd6f-3d4a-5c12-b651-262eec6e96f2",
-                              "command": "EVENT_FADE_IN",
+                              "id": "45f02498-8c23-59ed-a7e2-6f6821796543",
+                              "command": "EVENT_IF_VALUE",
                               "args": {
-                                "speed": "2"
-                              }
-                            },
-                            {
-                              "id": "6a7fff75-9ffc-5668-8e3d-f7c2b16a2dc2",
-                              "command": "EVENT_TEXT",
-                              "args": {
-                                "text": "Game Over"
-                              }
-                            },
-                            {
-                              "id": "800b1da5-d9a3-57da-a04a-1067edd40b7b",
-                              "command": "EVENT_SWITCH_SCENE",
-                              "args": {
-                                "sceneId": "3ed68e53-19c9-533f-acfb-b7c4c3d89e8e",
-                                "x": {
-                                  "type": "number",
-                                  "value": 2
-                                },
-                                "y": {
-                                  "type": "number",
-                                  "value": 13
-                                },
-                                "direction": "right",
-                                "fadeSpeed": "2"
+                                "variable": "5",
+                                "operator": "==",
+                                "comparator": 1,
+                                "__collapseElse": false
+                              },
+                              "children": {
+                                "true": [
+                                  {
+                                    "id": "02f5cd6f-3d4a-5c12-b651-262eec6e96f2",
+                                    "command": "EVENT_FADE_IN",
+                                    "args": {
+                                      "speed": "2"
+                                    }
+                                  },
+                                  {
+                                    "id": "6a7fff75-9ffc-5668-8e3d-f7c2b16a2dc2",
+                                    "command": "EVENT_TEXT",
+                                    "args": {
+                                      "text": "Game Over"
+                                    }
+                                  },
+                                  {
+                                    "id": "800b1da5-d9a3-57da-a04a-1067edd40b7b",
+                                    "command": "EVENT_SWITCH_SCENE",
+                                    "args": {
+                                      "sceneId": "3ed68e53-19c9-533f-acfb-b7c4c3d89e8e",
+                                      "x": {
+                                        "type": "number",
+                                        "value": 2
+                                      },
+                                      "y": {
+                                        "type": "number",
+                                        "value": 13
+                                      },
+                                      "direction": "right",
+                                      "fadeSpeed": "2"
+                                    }
+                                  }
+                                ],
+                                "false": [
+                                  {
+                                    "id": "70ca6d74-124c-5755-a805-4f1bbcd9327b",
+                                    "command": "EVENT_FADE_IN",
+                                    "args": {
+                                      "speed": "2"
+                                    }
+                                  }
+                                ]
                               }
                             }
                           ],

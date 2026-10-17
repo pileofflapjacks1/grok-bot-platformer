@@ -972,34 +972,57 @@
                                           }
                                         },
                                         {
-                                          "id": "194141a3-9d33-5641-8887-7805db239791",
-                                          "command": "EVENT_FADE_IN",
+                                          "id": "d72d0973-c0d1-510a-b728-a0124b93f4fa",
+                                          "command": "EVENT_IF_VALUE",
                                           "args": {
-                                            "speed": "2"
-                                          }
-                                        },
-                                        {
-                                          "id": "2e29d209-ebdc-513f-b8d1-1132c29a035d",
-                                          "command": "EVENT_TEXT",
-                                          "args": {
-                                            "text": "Game Over"
-                                          }
-                                        },
-                                        {
-                                          "id": "0c99cccb-bb9b-5aa2-a1de-2f1fc8aa4fc7",
-                                          "command": "EVENT_SWITCH_SCENE",
-                                          "args": {
-                                            "sceneId": "3ed68e53-19c9-533f-acfb-b7c4c3d89e8e",
-                                            "x": {
-                                              "type": "number",
-                                              "value": 2
-                                            },
-                                            "y": {
-                                              "type": "number",
-                                              "value": 13
-                                            },
-                                            "direction": "right",
-                                            "fadeSpeed": "2"
+                                            "variable": "5",
+                                            "operator": "==",
+                                            "comparator": 1,
+                                            "__collapseElse": false
+                                          },
+                                          "children": {
+                                            "true": [
+                                              {
+                                                "id": "194141a3-9d33-5641-8887-7805db239791",
+                                                "command": "EVENT_FADE_IN",
+                                                "args": {
+                                                  "speed": "2"
+                                                }
+                                              },
+                                              {
+                                                "id": "2e29d209-ebdc-513f-b8d1-1132c29a035d",
+                                                "command": "EVENT_TEXT",
+                                                "args": {
+                                                  "text": "Game Over"
+                                                }
+                                              },
+                                              {
+                                                "id": "0c99cccb-bb9b-5aa2-a1de-2f1fc8aa4fc7",
+                                                "command": "EVENT_SWITCH_SCENE",
+                                                "args": {
+                                                  "sceneId": "3ed68e53-19c9-533f-acfb-b7c4c3d89e8e",
+                                                  "x": {
+                                                    "type": "number",
+                                                    "value": 2
+                                                  },
+                                                  "y": {
+                                                    "type": "number",
+                                                    "value": 13
+                                                  },
+                                                  "direction": "right",
+                                                  "fadeSpeed": "2"
+                                                }
+                                              }
+                                            ],
+                                            "false": [
+                                              {
+                                                "id": "f5a6135f-e2b8-5c3a-915e-656f35d18d45",
+                                                "command": "EVENT_FADE_IN",
+                                                "args": {
+                                                  "speed": "2"
+                                                }
+                                              }
+                                            ]
                                           }
                                         }
                                       ],

@@ -1540,19 +1540,26 @@ def lose_life(name: str, lives_symbol: str, alive: list, dead: list) -> list:
     ]
 
 
-def game_over(name: str, fade_out_first: bool) -> list:
+def game_over(name: str, fade_out_first: bool, from_hit: bool = False) -> list:
+    """Game Over text, then restart Level 1.
+
+    from_hit: called from a hurt script, which owns hurt_lock == 1. If the
+    lock is anything else by the time the fade-out ends, the roadster (or a
+    pit) has taken over, so Game Over is skipped: a last-life hit can never
+    race LEVEL 1 CLEAR. The screen fades back in and the cutscene carries on.
+    """
     start_x, start_y = PLAYER_START
     steps = []
     if fade_out_first:
         steps.append(fade(f"{name}-over-out", "out"))
-    steps.extend(
-        [
-            fade(f"{name}-over-in", "in"),
-            event(f"{name}-over", "EVENT_TEXT", {"text": "Game Over"}),
-            switch_scene(f"{name}-restart", "scene_level1_green_hills", start_x, start_y),
-        ]
-    )
-    return steps
+    over = [
+        fade(f"{name}-over-in", "in"),
+        event(f"{name}-over", "EVENT_TEXT", {"text": "Game Over"}),
+        switch_scene(f"{name}-restart", "scene_level1_green_hills", start_x, start_y),
+    ]
+    if from_hit:
+        return steps + [if_value(f"{name}-over-check", HURT_LOCK, "==", 1, over, [fade(f"{name}-over-skip-in", "in")])]
+    return steps + over
 
 
 def enemy_update(suffix: str) -> list:
@@ -1796,7 +1803,7 @@ def hurt_steps(suffix: str, segment: dict) -> list:
                             beep(f"{suffix}-life-sound", 1),
                             shake(f"{suffix}-life-shake", 0.4, 5),
                         ],
-                        game_over(suffix, True),
+                        game_over(suffix, True, from_hit=True),
                     ),
                 ),
                 wait_frames(f"{suffix}-hurt-grace", HURT_GRACE_FRAMES),
@@ -1965,13 +1972,36 @@ def roadster_script(name: str) -> list:
         # still reaches the player in blank state and its knockback would
         # break the sequence. Never released here; the title scene does not
         # use it and Level 1's init clears it.
-        set_number(f"{name}-hurt-hold", HURT_LOCK, HURT_HOLD),
+        # Counting the lock down from HURT_HOLD + 60 to HURT_HOLD keeps it at
+        # 2 or more throughout (no hit can start or release it, and a hit
+        # already on its last life skips Game Over, see game_over) while the
+        # player is re-hidden every frame for 60 frames: longer than a
+        # powered hit's blink_player, which could otherwise show Grok Bot
+        # beside the car.
+        set_number(f"{name}-hurt-hold", HURT_LOCK, HURT_HOLD + 60),
         set_engine(f"{name}-stop-vx", "plat_vel_x", 0),
         set_engine(f"{name}-stop-vy", "plat_vel_y", 0),
         no_fire(f"{name}-nofire"),
         event(f"{name}-board", "EVENT_ACTOR_HIDE", {"actorId": "player"}),
         beep(f"{name}-door", 6),
-        wait_frames(f"{name}-start", 20),
+        event(
+            f"{name}-hide-hold",
+            "EVENT_LOOP_WHILE",
+            {
+                "condition": {
+                    "type": "gt",
+                    "valueA": {"type": "variable", "value": HURT_LOCK},
+                    "valueB": {"type": "number", "value": HURT_HOLD},
+                }
+            },
+            {
+                "true": [
+                    event(f"{name}-hide-again", "EVENT_ACTOR_HIDE", {"actorId": "player"}),
+                    wait_frames(f"{name}-hide-tick", 1),
+                    event(f"{name}-hide-count", "EVENT_DEC_VALUE", {"variable": HURT_LOCK}),
+                ]
+            },
+        ),
         beep(f"{name}-engine", 3),
         # Keep the drive short so the car stays on the screen the camera shows
         # (it follows the hidden player at the car's rest spot).
