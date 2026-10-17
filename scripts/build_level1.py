@@ -1989,10 +1989,14 @@ def hurt_steps(suffix: str, segment: dict) -> list:
                             # Like a pit: back to the start of this half.
                             unless_done(f"{suffix}-life-respawn-check", [
                                 event(f"{suffix}-life-freeze", "EVENT_PLATFORMER_STATE_SET", {"state": "blank"}),
+                                # B is unbound through the fade (like the pit),
+                                # so no electron is spent while the screen is dark.
+                                no_fire(f"{suffix}-life-nofire"),
                                 fade(f"{suffix}-life-out", "out"),
                                 *respawn(f"{suffix}-life", *PLAYER_START),
                                 event(f"{suffix}-life-show", "EVENT_ACTOR_SHOW", {"actorId": "player"}),
                                 fade(f"{suffix}-life-in", "in"),
+                                attach_fire(segment, f"{suffix}-life-refire"),
                             ]),
                         ],
                         game_over(suffix, True, from_hit=True),
