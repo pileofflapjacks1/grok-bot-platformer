@@ -1650,20 +1650,54 @@ def show_ammo(name: str, actor_symbol: str) -> dict:
     return show_counter(name, actor_symbol, "0")
 
 
+# Pixels per step of the scripted pit fall, 3 frames apart: it speeds up
+# like gravity and carries Grok Bot from the pit mouth (row 15) off the
+# bottom of the screen in about half a second.
+FALL_STEPS = (2, 3, 4, 5, 6, 7, 8, 8, 8, 8)
+
+
 def pit_script(name: str, segment: dict) -> list:
-    # The trigger sits at the bottom of the gap, so this runs after the fall.
-    # Shake, then fade out, then take the life. A life still left fades back
-    # in at the start of this half. The last life fades in on "Game Over".
+    # The trigger covers the pit mouth. Blank platformer state stops input and
+    # the engine's own physics, then the script drops Grok Bot off screen so
+    # the fall is visible. Then fade out and take the life (and any power-up).
+    # A life still left fades back in at the start of this half. The last
+    # life fades in on "Game Over".
     lives_symbol = f"actor_lives_{segment['key']}"
     start_x, start_y = PLAYER_START
+    fall = []
+    for index, pixels in enumerate(FALL_STEPS):
+        fall += [
+            event(
+                f"{name}-fall{index}",
+                "EVENT_ACTOR_SET_POSITION_RELATIVE",
+                {
+                    "actorId": "player",
+                    "x": {"type": "number", "value": 0},
+                    "y": {"type": "number", "value": pixels},
+                    "units": "pixels",
+                },
+            ),
+            wait_frames(f"{name}-fall-wait{index}", 3),
+        ]
     return [
-        shake(f"{name}-shake", 0.4, 5),
-        wait_frames(f"{name}-pause", 18),
+        event(f"{name}-freeze", "EVENT_PLATFORMER_STATE_SET", {"state": "blank"}),
+        set_engine(f"{name}-stop-vx", "plat_vel_x", 0),
+        set_engine(f"{name}-stop-vy", "plat_vel_y", 0),
+        beep(f"{name}-fall-sound", 1),
+        *fall,
+        event(f"{name}-gone", "EVENT_ACTOR_HIDE", {"actorId": "player"}),
+        wait_frames(f"{name}-pause", 12),
         fade(f"{name}-out", "out"),
+        set_number(f"{name}-unpower", POWER_VAR, 0),
+        *player_palette_events(f"{name}-unpower-pal"),
         *lose_life(
             name,
             lives_symbol,
-            respawn(name, start_x, start_y) + [fade(f"{name}-in", "in")],
+            respawn(name, start_x, start_y)
+            + [
+                event(f"{name}-back", "EVENT_ACTOR_SHOW", {"actorId": "player"}),
+                fade(f"{name}-in", "in"),
+            ],
             game_over(name, False),
         ),
     ]
