@@ -268,65 +268,81 @@ def shift_frame(
             image[y][origin_x + x] = original[src][x] if 0 <= src < 16 else CLEAR
 
 
-def paint_player() -> list[list[tuple[int, int, int, int]]]:
-    """Round Grok Bot: antenna, black capsule eyes, no mouth. Left side is mirrored."""
-    image = blank(64, 16, CLEAR)
-    # Idle, step down, idle, jump. Capsule eyes stay solid black.
-    for frame, dy in enumerate((0, 1, 0, -1)):
-        draw_grok_bot(image, frame * 16, dy)
-    return image
+# Locked Grok Imagine player style: one solid fill, a thin black outline, an
+# optional lower shade, and two short thick horizontal black oval eyes. No
+# mouth, eye whites, pupils, or antenna. Only CLEAR/WHITE/GRAY/BLACK are used,
+# so the GB Studio sprite palette (slot 0) recolors every shape: WHITE is the
+# fill, GRAY the shade, BLACK the outline.
+PLAYER_SHAPES = ["circle", "square", "heart", "star", "triangle"]
+PLAYER_FILES = {
+    "circle": "player_grok.png",
+    "square": "player_grok_square.png",
+    "heart": "player_heart.png",
+    "star": "player_star.png",
+    "triangle": "player_triangle.png",
+}
 
 
-def draw_grok_bot(
-    image: list[list[tuple[int, int, int, int]]],
-    origin: int,
-    dy: int,
-    square: bool = False,
-) -> None:
-    cx, cy, radius = 8.0, 10.0 + dy, 5.2
-    limit = radius * radius
-    inner = (radius - 1.05) ** 2
+def _inside(shape: str, x: float, y: float) -> bool:
+    """Shape test in a 16x16 cell; (x, y) is a pixel centre, body sits low."""
+    import math
+    if shape == "circle":
+        return (x - 8) ** 2 + (y - 9.5) ** 2 <= 6.0 ** 2
+    if shape == "square":
+        return 2 <= x <= 14 and 3.5 <= y <= 15
+    if shape == "heart":
+        u, v = (x - 8) / 6.4, (8.6 - y) / 6.4
+        return (u * u + v * v - 1) ** 3 - u * u * v ** 3 <= 0
+    if shape == "star":
+        dx, dy = x - 8, y - 9.0
+        r = math.hypot(dx, dy)
+        a = math.atan2(dx, -dy)
+        k = (a % (2 * math.pi / 5)) / (2 * math.pi / 5)
+        edge = 7.4 * (1 - 0.48 * (1 - abs(2 * k - 1)))
+        return r <= edge
+    if shape == "triangle":
+        return 2.5 <= y <= 15 and abs(x - 8) <= (y - 2.0) * 0.6
+    raise ValueError(shape)
+
+
+def draw_shape_bot(image, origin: int, dy: int, shape: str) -> None:
+    mask = [[_inside(shape, x + 0.5, y + 0.5 - dy) for x in range(16)] for y in range(16)]
+    ys = [y for y in range(16) for x in range(16) if mask[y][x]]
+    top, bottom = min(ys), max(ys)
+    shade_from = bottom - max(1, (bottom - top) // 5)
     for y in range(16):
         for x in range(16):
-            dx = x + 0.5 - cx
-            ddy = y + 0.5 - cy
-            if square:
-                # Same footprint as the round head: x 3-12, y 5-14 (shifted by dy).
-                if not (3 <= x <= 12 and 5 + dy <= y <= 14 + dy):
-                    continue
-                edge = x in (3, 12) or y in (5 + dy, 14 + dy)
-                image[y][origin + x] = BLACK if edge else (GRAY if ddy > 1.4 else WHITE)
+            if not mask[y][x]:
                 continue
-            dist = dx * dx + ddy * ddy
-            if dist <= inner:
-                image[y][origin + x] = GRAY if ddy > 1.4 else WHITE
-            elif dist <= limit:
-                image[y][origin + x] = BLACK
-    for by in (dy, dy + 1):
-        for bx in (origin + 7, origin + 8):
-            if 0 <= by < 16:
-                image[by][bx] = BLACK
-    for ay in (dy + 2, dy + 3):
-        if 0 <= ay < 16:
-            image[ay][origin + 8] = BLACK
-    # Two black capsules with white on every side, so they stay separate.
-    eye_y = 8 + dy
-    for ey in range(2):
-        yy = eye_y + ey
-        if not 0 <= yy < 16:
-            continue
-        for x in range(4, 12):
-            image[yy][origin + x] = WHITE
-        for x in (5, 6, 9, 10):
-            image[yy][origin + x] = BLACK
+            edge = any(
+                not (0 <= y + oy < 16 and 0 <= x + ox < 16 and mask[y + oy][x + ox])
+                for ox, oy in ((1, 0), (-1, 0), (0, 1), (0, -1))
+            )
+            image[y][origin + x] = BLACK if edge else (GRAY if y >= shade_from else WHITE)
+    # Eyes: two short, thick horizontal black ovals, 3x2 px each, mirrored about
+    # the sheet's centre line. At 16x16 a 3x2 block is the smallest readable oval.
+    eye_y = {"triangle": 11, "star": 7, "heart": 7, "square": 8, "circle": 8}[shape] + dy
+    for cx in (4, 9):
+        for yy, xs in ((eye_y, range(cx, cx + 3)), (eye_y + 1, range(cx, cx + 3))):
+            for xx in xs:
+                if 0 <= yy < 16 and image[yy][origin + xx][3]:
+                    image[yy][origin + xx] = BLACK
 
 
-def paint_player_square() -> list[list[tuple[int, int, int, int]]]:
-    """Square-head Grok Bot: same antenna, capsule eyes, and frames as the round one."""
+def paint_shape_player(shape: str):
+    """Four frames: idle, walk A (bob down), walk B, jump (up). Left is mirrored."""
     image = blank(64, 16, CLEAR)
     for frame, dy in enumerate((0, 1, 0, -1)):
-        draw_grok_bot(image, frame * 16, dy, square=True)
+        draw_shape_bot(image, frame * 16, dy, shape)
     return image
+
+
+def paint_player():
+    return paint_shape_player("circle")
+
+
+def paint_player_square():
+    return paint_shape_player("square")
 
 
 def paint_enemy() -> list[list[tuple[int, int, int, int]]]:
@@ -1436,6 +1452,8 @@ def build_images() -> dict:
     ammo_frames = electron_total() + 1
     write_png(sprites / "player_grok.png", 64, 16, paint_player())
     write_png(sprites / "player_grok_square.png", 64, 16, paint_player_square())
+    for shape in PLAYER_SHAPES[2:]:
+        write_png(sprites / PLAYER_FILES[shape], 64, 16, paint_shape_player(shape))
     write_png(sprites / "press_start.png", PRESS_FRAMES * 16, 16, paint_press_start())
     write_png(sprites / "enemy_red_blob.png", 32, 16, paint_enemy())
     write_png(sprites / "electron.png", 16, 16, paint_electron())
@@ -1720,6 +1738,22 @@ def build_resources(collisions: dict) -> None:
             num_tiles=8,
         ),
     )
+    for shape in PLAYER_SHAPES[2:]:
+        name = PLAYER_FILES[shape][:-4]
+        write_json(
+            sprites / (PLAYER_FILES[shape] + ".gbsres"),
+            sprite_resource(
+                name=name,
+                symbol="sprite_" + name,
+                filename=PLAYER_FILES[shape],
+                image_path=sprites / PLAYER_FILES[shape],
+                width=64,
+                height=16,
+                animation_type="platform_player",
+                animations=player_animations(shape + "-"),
+                num_tiles=8,
+            ),
+        )
     write_json(
         sprites / "press_start.png.gbsres",
         sprite_resource(
@@ -1887,7 +1921,7 @@ DOTS = [
     ("Dot Yellow", "F8D830"),
     ("Dot Teal", "30C8B8"),
 ]
-SHAPES = ["sprite_player_grok", "sprite_player_grok_square"]
+SHAPES = ["sprite_" + PLAYER_FILES[shape][:-4] for shape in PLAYER_SHAPES]
 PRESS_TEXT = "PRESS START "
 PRESS_FRAMES = len(PRESS_TEXT) // 2
 PRESS_AT = (4, 11)
@@ -1985,21 +2019,24 @@ def color_events(name: str) -> list:
 
 
 def apply_player_choice(key: str) -> list:
-    """Level init: square head when player_shape is 1, then the chosen palette."""
+    """Level init: swap to the chosen shape's sheet (0 keeps the default), then the palette."""
     return [
-        if_value(
-            f"{key}-shape-square",
-            SHAPE_VAR,
-            "==",
-            1,
-            [
-                event(
-                    f"{key}-set-square",
-                    "EVENT_PLAYER_SET_SPRITE",
-                    {"spriteSheetId": uid(SHAPES[1])},
-                )
-            ],
-        ),
+        *[
+            if_value(
+                f"{key}-shape-{index}" if index > 1 else f"{key}-shape-square",
+                SHAPE_VAR,
+                "==",
+                index,
+                [
+                    event(
+                        f"{key}-set-{PLAYER_SHAPES[index]}" if index > 1 else f"{key}-set-square",
+                        "EVENT_PLAYER_SET_SPRITE",
+                        {"spriteSheetId": uid(SHAPES[index])},
+                    )
+                ],
+            )
+            for index in range(1, len(SHAPES))
+        ],
         *color_events(f"{key}-choice"),
     ]
 
@@ -2011,7 +2048,10 @@ def preview(tag: str) -> list:
         for index, symbol in enumerate(SHAPES)
     ]
     return [
-        if_value(f"pick-{tag}-shape", SHAPE_VAR, "==", 1, [sprite[1]], [sprite[0]]),
+        *[
+            if_value(f"pick-{tag}-shape{index}" if index else f"pick-{tag}-shape", SHAPE_VAR, "==", index, [sprite[index]])
+            for index in range(len(SHAPES))
+        ],
         *color_events(f"pick-{tag}"),
     ]
 
@@ -2044,17 +2084,24 @@ def title_script() -> list:
 
 def picker_script() -> list:
     start_x, start_y = PLAYER_START
-    toggle = [
+    last_shape = len(SHAPES) - 1
+    right = [
+        event("pick-shape-inc", "EVENT_INC_VALUE", {"variable": SHAPE_VAR}),
+        if_value("pick-shape-wrap", SHAPE_VAR, ">", last_shape, [set_number("pick-shape-to-0", SHAPE_VAR, 0)]),
+        beep("pick-shape-sound", 6),
+        *preview("shape"),
+    ]
+    left = [
         if_value(
-            "pick-shape-flip",
+            "pick-shape-under",
             SHAPE_VAR,
             "==",
             0,
-            [set_number("pick-shape-to-1", SHAPE_VAR, 1)],
-            [set_number("pick-shape-to-0", SHAPE_VAR, 0)],
+            [set_number("pick-shape-to-last", SHAPE_VAR, last_shape)],
+            [event("pick-shape-dec", "EVENT_DEC_VALUE", {"variable": SHAPE_VAR})],
         ),
-        beep("pick-shape-sound", 6),
-        *preview("shape"),
+        beep("pick-left-sound", 6),
+        *preview("left"),
     ]
     up = [
         event("pick-color-inc", "EVENT_INC_VALUE", {"variable": COLOR_VAR}),
@@ -2078,7 +2125,8 @@ def picker_script() -> list:
     return [
         hide_player("pick-hide-player"),
         input_script("pick-go-input", ["a", "start"], go),
-        input_script("pick-left-right", ["left", "right"], toggle),
+        input_script("pick-left-right", ["right"], right),
+        input_script("pick-left", ["left"], left),
         input_script("pick-up", ["up"], up),
         input_script("pick-down", ["down"], down),
         # Show the current choice: round + white on a fresh boot.
@@ -2312,7 +2360,7 @@ GB Studio reads every `.png` in this folder. The Level 1 sheets below are 16x16,
 
 | File | Use |
 |------|-----|
-| player_grok.png | Grok Bot. Round head, antenna, black capsule eyes, no mouth. Four frames: idle, walk A, walk B, jump. Left facing is mirrored. |
+| player_grok.png | Grok Bot, circle shape (picker shape 0). Locked Grok Imagine style: solid fill, thin black outline, lower shade, two short thick black oval eyes; no mouth, eye whites, pupils, or antenna. Four frames: idle, walk A, walk B, jump. Left facing is mirrored. |\n| player_grok_square.png | Same style, square (shape 1). |\n| player_heart.png | Same style, heart (shape 2). |\n| player_star.png | Same style, star (shape 3). |\n| player_triangle.png | Same style, triangle (shape 4). |
 | enemy_red_blob.png | Grok Blob. Two frames, cream eyes, black pupils, belly, brows, and feet. |
 | electron.png | Electron pickup and the projectile Grok Bot fires. |
 | silicon_chip.png | One power-up. Collecting it unlocks firing for the rest of the run. |
@@ -2321,7 +2369,7 @@ GB Studio reads every `.png` in this folder. The Level 1 sheets below are 16x16,
 
 `actor.png`, `actor_animated.png`, and `static.png` are the GB Studio blank-template placeholders. The player setting points at `player_grok.png`.
 
-Other shapes from the character-select design (heart, star, teardrop, and the rest) are not drawn yet. Palette swaps for those shapes come after this level is playable.
+All player sheets use only transparent + three indexed colors (fill, shade, outline), so the picker's color choice recolors any shape through sprite palette slot 0 instead of duplicating PNGs. Teardrop, oval, and the rest are not drawn yet. Each sheet is 8 tiles (4 frames x 2 8x16 tiles); only the active sheet is loaded per scene.
 
 Regenerate with `python3 scripts/build_level1.py`.
 """

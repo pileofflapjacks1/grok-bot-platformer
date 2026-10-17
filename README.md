@@ -14,11 +14,11 @@ An original GB Studio platformer for the ModRetro Chromatic and other Game Boy C
 ## Play Level 1
 Open `GrokBotPlatformer.gbsproj` in GB Studio 4.2 or newer and press Play.
 
-Boot flow: Title ("GROK BOT", PRESS START) → Picker → Level 1. Start or A leaves the title right away. On the picker, Left/Right switches round or square head, Up/Down cycles white, red, yellow, teal, and A starts. The default is round + white, so Start, A gets you playing. The choice is kept through pits and Game Over (which restarts Level 1, not the picker). After "Level 1 clear!" a button press returns to the title.
+Boot flow: Title ("GROK BOT", PRESS START) → Picker → Level 1. Start or A leaves the title right away. On the picker, Left/Right cycles circle, square, heart, star, and triangle, Up/Down cycles white, red, yellow, teal, and A starts. The default is round + white, so Start, A gets you playing. The choice is kept through pits and Game Over (which restarts Level 1, not the picker). After "Level 1 clear!" a button press returns to the title.
 
 Level 1 is two scenes and 340 tiles wide, about five times the previous run. Green Hills leads straight into High Ridge. A full clear is a few minutes, not a 15 second clip.
 
-- Grok Bot is a round head with an antenna and black capsule eyes. Left facing is mirrored.
+- Grok Bot uses the locked Grok Imagine style: a solid shape with a thin black outline and two short thick black oval eyes (no mouth, eye whites, pupils, or antenna). Left facing is mirrored.
 - Move with the arrows or WASD. Jump with Alt, Z, or J. Hold Control, K, or X to run. That same button fires an electron once Grok Bot is armed.
 - Thirteen Grok Blobs, with eyes, a belly, brows, and feet. Stomping one hides it and bounces you. A shot also removes the blob, without the bounce. A side touch knocks you back, shakes the screen, and counts as one hit. Three hits cost one life. You stay where you are, and the hit count resets. There is about a second between hits, so standing on a blob does not count as three.
 - Twenty-two electrons. Touching one adds it to the ammo badge in the top-right. That badge is a blue square with a two-digit count, including 00 before you collect any. You do not need all of them to finish.
@@ -45,10 +45,10 @@ Level 1 sheets are in `assets/sprites/`:
 - `lives.png`
 - `ammo.png`
 
-- `player_grok_square.png` (square-head variant for the picker)
+- `player_grok_square.png`, `player_heart.png`, `player_star.png`, `player_triangle.png` (picker shapes; recolored by sprite palette slot 0)
 - `press_start.png` (title text)
 
-Two of the shapes and four colors from `docs/CHARACTER_SELECTION.md` are in the picker.
+Five of the shapes and four colors from `docs/CHARACTER_SELECTION.md` are in the picker.
 
 ## Next Steps
 1. Pull this project on the test computer, open it in GB Studio, and record a normal-speed clear.
