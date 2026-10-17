@@ -35,15 +35,23 @@ OUTLINE = (24, 48, 40, 255)
 # A pixel is transparent when alpha is under 200, or when it is pure green
 # or pure blue. Otherwise the green channel picks the palette slot:
 # 205 or more is color 1, 130 or more is color 2, and the rest is color 3.
+#
+# A GB Studio palette has four colors, but a SPRITE palette only uses three
+# of them: compileData.ts getSpritePalette (and scriptBuilder paletteSetSprite)
+# build [c0, c0, c1, c3], so sprite color 1 (light) shows palette color 0,
+# color 2 (mid) shows palette color 1, color 3 (dark) shows palette color 3,
+# and palette color 2 is never used. sprite_palette() below writes palettes
+# in that order. Getting this wrong left every sprite's light pixels white
+# (the character-select fill bug) and drew mid/dark art in the wrong slots.
 # Grok Bot is a round head, gray shade, and black capsule eyes.
 WHITE = (244, 244, 248, 255)
 GRAY = (138, 138, 152, 255)
-RED = (248, 72, 72, 255)
+RED = (248, 150, 150, 255)  # mid band: the red slot of Blob Red
 E_WHITE = (232, 248, 255, 255)
-CYAN = (80, 216, 248, 255)
+CYAN = (80, 176, 248, 255)  # mid band: the cyan slot of Electron Blue
 BLUE = (24, 72, 200, 255)
 SILVER = (216, 220, 232, 255)
-CHIP_BODY = (96, 104, 120, 255)
+CHIP_BODY = (96, 150, 120, 255)  # mid band: the body slot of Chip Gray
 BLACK = (24, 16, 24, 255)
 CREAM = (248, 232, 208, 255)
 CLOUD = (232, 200, 240, 255)
@@ -314,11 +322,13 @@ def shift_frame(
             image[y][origin_x + x] = original[src][x] if 0 <= src < 16 else CLEAR
 
 
-# Locked Grok Imagine player style: one solid fill, a thin black outline, an
-# optional lower shade, and two short thick horizontal black oval eyes. No
-# mouth, eye whites, pupils, or antenna. Only CLEAR/WHITE/GRAY/BLACK are used,
-# so the GB Studio sprite palette (slot 0) recolors every shape: WHITE is the
-# fill (color 1), GRAY the shade (color 2), BLACK the outline (color 3).
+# Locked Grok Imagine player style: one solid fill, a thin black outline, and
+# two short thick horizontal black oval eyes. No mouth, eye whites, pupils,
+# antenna, or shade band. Every fill pixel is WHITE (sprite color 1, palette
+# color 0), the one slot the picker's color recolors, so the whole body takes
+# the chosen color. The outline is GRAY (color 2, palette color 1): black in
+# the normal palettes, and the slot the power-up glow swaps. The eyes are
+# BLACK (color 3, palette color 3), black in every palette.
 # The list order is the picker order and the player_shape (var 6) value.
 PLAYER_SHAPES = ["circle", "square", "heart", "star", "triangle", "teardrop", "oval", "blob"]
 PLAYER_FILES = {
@@ -472,9 +482,6 @@ def _shape_mask(shape: str, dy: int) -> list[list[bool]]:
 
 def draw_shape_bot(image, origin: int, dy: int, shape: str) -> None:
     mask = _shape_mask(shape, dy)
-    ys = [y for y in range(16) for x in range(16) if mask[y][x]]
-    top, bottom = min(ys), max(ys)
-    shade_from = bottom - max(1, (bottom - top) // 5)
     for y in range(16):
         for x in range(16):
             if not mask[y][x]:
@@ -483,7 +490,7 @@ def draw_shape_bot(image, origin: int, dy: int, shape: str) -> None:
                 not (0 <= y + oy < 16 and 0 <= x + ox < 16 and mask[y + oy][x + ox])
                 for ox, oy in ((1, 0), (-1, 0), (0, 1), (0, -1))
             )
-            image[y][origin + x] = BLACK if edge else (GRAY if y >= shade_from else WHITE)
+            image[y][origin + x] = GRAY if edge else WHITE
     # Eyes: two short, thick horizontal black ovals, 3x2 px each, mirrored about
     # the cell's centre line. At 16x16 a 3x2 block is the smallest readable oval.
     eye_top, eye_xs = PLAYER_EYES[shape]
@@ -843,9 +850,8 @@ def solid_top(segment: dict, x: int) -> int | None:
 def paint_lives() -> list[list[tuple[int, int, int, int]]]:
     """Four frames. Frame index matches `lives`: a heart and the digit 0 through 3.
 
-    Blob Red shows slot 1 as red, slot 2 as cream, and slot 3 as black.
-    CREAM has a high green channel, so the heart is red in game.
-    GRAY is the middle band, so the digit is cream in game.
+    On Blob Red the heart (RED, mid band) is red, the digit (CREAM, light
+    band) is cream, and the badge (BLACK) is black.
     """
     heart = (
         "0110110",
@@ -861,8 +867,8 @@ def paint_lives() -> list[list[tuple[int, int, int, int]]]:
         for y, row in enumerate(heart):
             for x, bit in enumerate(row):
                 if bit == "1":
-                    image[5 + y][ox + x] = CREAM
-        draw_digit(image, ox + 9, 3, frame, GRAY, 2)
+                    image[5 + y][ox + x] = RED
+        draw_digit(image, ox + 9, 3, frame, CREAM, 2)
     return image
 
 
@@ -1064,6 +1070,15 @@ def background_resource(
         "imageHeight": tiles_y * 8,
         "autoColor": False,
     }
+
+
+def sprite_palette(light: str, mid: str, dark: str) -> list[str]:
+    """Palette colors in GB Studio's sprite order: [light, mid, unused, dark].
+
+    Palette color 2 is never shown on sprites; it repeats light so the
+    palette editor swatches still look sensible.
+    """
+    return [light, mid, light, dark]
 
 
 def palette(name: str, colors: list[str]) -> dict:
@@ -1623,7 +1638,8 @@ def write_shapes_sheet(path: Path) -> None:
     def recolor(pixel, colors):
         if pixel == CLEAR:
             return None
-        hex_color = colors[PLAYER_INDEXED.index(pixel)]
+        # Sprite color 1/2/3 shows palette color 0/1/3 (see sprite_palette).
+        hex_color = colors[(None, 0, 1, 3)[PLAYER_INDEXED.index(pixel)]]
         return tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4)) + (255,)
 
     for row, shape in enumerate(PLAYER_SHAPES):
@@ -2031,19 +2047,19 @@ def build_resources(collisions: dict) -> None:
     )
     write_json(
         palettes / "grok_bot.gbsres",
-        palette("Grok Bot", ["F8F8F8", "F4F4F8", "8A8A98", "181018"]),
+        palette("Grok Bot", GROK_COLORS[0][1]),
     )
     write_json(
         palettes / "blob_red.gbsres",
-        palette("Blob Red", ["F8F8F8", "F84848", "F8E8D0", "181018"]),
+        palette("Blob Red", sprite_palette("F8E8D0", "F84848", "181018")),
     )
     write_json(
         palettes / "electron_blue.gbsres",
-        palette("Electron Blue", ["F8F8F8", "E8F8FF", "50D8F8", "1848C8"]),
+        palette("Electron Blue", sprite_palette("E8F8FF", "50D8F8", "1848C8")),
     )
     write_json(
         palettes / "chip_gray.gbsres",
-        palette("Chip Gray", ["F8F8F8", "D8DCE8", "606878", "181018"]),
+        palette("Chip Gray", sprite_palette("D8DCE8", "606878", "181018")),
     )
     for name, colors in GROK_COLORS[1:]:
         write_json(palettes / f"{name.lower().replace(' ', '_')}.gbsres", palette(name, colors))
@@ -2110,12 +2126,16 @@ SHAPE_VAR = "6"
 COLOR_VAR = "7"
 # The menus hide the player and lock its movement, so where it starts does not matter.
 MENU_PLAYER = (1, 1)
-GROK_COLORS = [
-    ("Grok Bot", ["F8F8F8", "F4F4F8", "8A8A98", "181018"]),
-    ("Grok Red", ["F8F8F8", "F85050", "A82020", "181018"]),
-    ("Grok Yellow", ["F8F8F8", "F8E040", "B08810", "181018"]),
-    ("Grok Teal", ["F8F8F8", "40D8C8", "107868", "181018"]),
+# Picker colors, in player_color (var 7) order. Sprite order: the fill is
+# palette color 0 (the whole body), the outline palette color 1 (black), the
+# eyes palette color 3 (black). See sprite_palette().
+GROK_FILLS = [
+    ("Grok Bot", "F4F4F8"),
+    ("Grok Red", "F85050"),
+    ("Grok Yellow", "F8E040"),
+    ("Grok Teal", "40D8C8"),
 ]
+GROK_COLORS = [(name, sprite_palette(fill, "181018", "181018")) for name, fill in GROK_FILLS]
 DOTS = [
     ("Dot White", "F8F8F8"),
     ("Dot Red", "F84848"),
