@@ -78,8 +78,12 @@ MAX_ACTORS = 20
 SCENE_GAP = 80
 # An actor's tile y is its sprite's BOTTOM 8 px row: GB Studio draws a 16 px
 # tall sprite from pixel 8*y - 8 to 8*y + 7. HUD sprites at y=0 therefore had
-# their top half above the screen. Row 1 puts the 16 px HUD at pixels 0..15.
+# their top half above the screen (confirmed on a ModRetro Chromatic). Row 1
+# plus a 2 px metasprite nudge (HUD_TILE_Y, up-positive) puts the 16 px HUD at
+# screen pixels 2..17: fully visible with a 2 px top margin, in the sky band.
 HUD_ROW = 1
+HUD_NUDGE_PX = 2
+HUD_TILE_Y = -HUD_NUDGE_PX
 LIVES_AT = (1, HUD_ROW)
 AMMO_AT = (16, HUD_ROW)
 POWER_VAR = "9"
@@ -1244,11 +1248,12 @@ def unique_tiles(image: list[list[tuple[int, int, int, int]]], tile: int = 8) ->
     return len(seen)
 
 
-def tile_ref(name: str, x: int, slice_x: int, palette_index: int = 0) -> dict:
+def tile_ref(name: str, x: int, slice_x: int, palette_index: int = 0, y: int = 0) -> dict:
+    # Metasprite tile y is up-positive: compileSprites.ts emits -tile.y.
     return {
         "id": uid(name),
         "x": x,
-        "y": 0,
+        "y": y,
         "sliceX": slice_x,
         "sliceY": 0,
         "flipX": False,
@@ -1266,13 +1271,13 @@ def tile_ref(name: str, x: int, slice_x: int, palette_index: int = 0) -> dict:
 SLOT = {"scoredigit": 2, "scoretens": 2, "enemy": 1, "lives": 1, "electron": 2, "ammo": 2, "chip": 3, "flyer": 5, "turret": 3, "bolt": 1, "roadster": 4}
 
 
-def frame_of(name: str, slice_x: int) -> dict:
+def frame_of(name: str, slice_x: int, y: int = 0) -> dict:
     palette_index = SLOT.get(name.split("-")[0], 0)
     return {
         "id": uid(name),
         "tiles": [
-            tile_ref(name + "-l", 0, slice_x, palette_index),
-            tile_ref(name + "-r", 8, slice_x + 8, palette_index),
+            tile_ref(name + "-l", 0, slice_x, palette_index, y),
+            tile_ref(name + "-r", 8, slice_x + 8, palette_index, y),
         ],
     }
 
@@ -1405,11 +1410,11 @@ def fixed_animation(name: str) -> list[dict]:
 
 def lives_animations() -> list[dict]:
     # Frame index matches the lives variable: heart plus 0, 1, 2, or 3.
-    return frames_animation("lives", 4)
+    return frames_animation("lives", 4, HUD_TILE_Y)
 
 
-def frames_animation(name: str, count: int) -> list[dict]:
-    frames = [frame_of(f"{name}-f{index}", index * 16) for index in range(count)]
+def frames_animation(name: str, count: int, y: int = 0) -> list[dict]:
+    frames = [frame_of(f"{name}-f{index}", index * 16, y) for index in range(count)]
     animations = [{"id": uid(name + "-anim0"), "frames": frames}]
     animations.extend(empty_frame(f"{name}-anim{index}") for index in range(1, 8))
     return animations
@@ -3006,7 +3011,7 @@ def build_resources(collisions: dict) -> None:
                 width=160,
                 height=16,
                 animation_type="fixed",
-                animations=frames_animation(tag, 10),
+                animations=frames_animation(tag, 10, HUD_TILE_Y),
                 num_tiles=10 if name == "score_digit" else 20,
             ),
         )
@@ -3106,7 +3111,7 @@ def build_resources(collisions: dict) -> None:
             width=ammo_frames * 16,
             height=16,
             animation_type="fixed",
-            animations=frames_animation("ammo", ammo_frames),
+            animations=frames_animation("ammo", ammo_frames, HUD_TILE_Y),
             num_tiles=ammo_frames * 2,
         ),
     )
@@ -3841,13 +3846,14 @@ def scanline_peak(segment: dict) -> int:
     hud = [(LIVES_AT[0], LIVES_AT[1]), (AMMO_AT[0], AMMO_AT[1])]
     for left in range(0, SEG_W - 19):
         rows = [0] * (LEVEL_H + 2)
-        # A 16 px actor at tile y covers tile rows y-1 and y (see HUD_ROW).
+        # A 16 px actor at tile y covers tile rows y-1 and y (see HUD_ROW);
+        # the 2 px nudge spills into row y+1.
         for _x, y in hud:
-            rows[y - 1] += 2
-            rows[y] += 2
+            for row in (y - 1, y, y + 1):
+                rows[row] += 2
         # Score digits: 1 + 1 + 2 hardware sprites on the HUD row.
-        rows[HUD_ROW - 1] += 4
-        rows[HUD_ROW] += 4
+        for row in (HUD_ROW - 1, HUD_ROW, HUD_ROW + 1):
+            rows[row] += 4
         bolts = 0
         for kind, x, y in segment_bodies(segment):
             reach = PATROL.get(kind, 0)
@@ -3866,10 +3872,14 @@ def scanline_peak(segment: dict) -> int:
                 if 0 <= row < len(rows):
                     rows[row] += HW_SPRITES.get(kind, 2)
         # The player (2), its electron shots (2 each, on its row) and a turret
-        # bolt (aimed at it) can share any row the player reaches; it never
-        # reaches the HUD rows 0-1.
+        # bolt (aimed at it) can share any row the player reaches. A full jump
+        # from a high ledge does reach the HUD band (rows 0-2, screen px 2..17),
+        # so the player is counted there too. KNOWN LIMIT: a shot or bolt fired
+        # at the top of such a jump can push those lines past 10, and the GBC
+        # then drops a sprite on those lines for those frames.
         moving = 2 + MAX_SHOTS * 2 + bolts
-        worst = max(worst, max(rows[0], rows[1]), max(rows[2:]) + moving)
+        band = HUD_ROW + 2
+        worst = max(worst, max(rows[:band]) + 2, max(rows[band:]) + moving)
     return worst
 
 
