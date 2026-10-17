@@ -2106,8 +2106,15 @@ def set_engine(name: str, key: str, number: int) -> dict:
 
 
 def electron_script(name: str, ammo_symbol: str) -> list:
+    # Ammo is kept through a respawn reload (RESPAWN_VAR) while the electrons
+    # come back, so it could pass electron_total(). The badge has one frame
+    # per value 0..electron_total() and gbvm wraps a larger frame offset
+    # (actor_set_frame_offset: offset % frame count), so 9 would show 00.
+    # Cap the count; the pickup still scores and vanishes.
     return [
-        event(f"{name}-inc", "EVENT_INC_VALUE", {"variable": "0"}),
+        if_value(f"{name}-cap", "0", "<", electron_total(), [
+            event(f"{name}-inc", "EVENT_INC_VALUE", {"variable": "0"}),
+        ]),
         show_counter(f"{name}-ammo", ammo_symbol, "0"),
         *add_score(name, name.split("-")[0], POINTS["electron"]),
         beep(f"{name}-sound", 7),

@@ -22,10 +22,24 @@
   "prefabScriptOverrides": {},
   "script": [
     {
-      "id": "a50925c3-89cb-57a6-95d6-fce521e8b720",
-      "command": "EVENT_INC_VALUE",
+      "id": "7bf834b9-7311-58dc-91f2-b143add9bccc",
+      "command": "EVENT_IF_VALUE",
       "args": {
-        "variable": "0"
+        "variable": "0",
+        "operator": "<",
+        "comparator": 8,
+        "__collapseElse": true
+      },
+      "children": {
+        "true": [
+          {
+            "id": "a50925c3-89cb-57a6-95d6-fce521e8b720",
+            "command": "EVENT_INC_VALUE",
+            "args": {
+              "variable": "0"
+            }
+          }
+        ]
       }
     },
     {
