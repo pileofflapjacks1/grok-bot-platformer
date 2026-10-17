@@ -136,8 +136,10 @@ SEGMENTS = [
         "blobs": [(10, 13), (23, 10), (36, 13), (81, 10)],
         "coins": [(6, 11), (14, 10), (27, 7)],
         "chips": [(48, 11), (140, 11)],
-        "electrons": [(52, 8), (58, 10), (78, 7), (100, 9), (146, 8)],
+        "electrons": [(52, 8), (58, 10), (78, 7), (146, 8)],
         "flyers": [(70, 9), (128, 8)],
+        # One shooter on the high ledge; it fires a bolt at Grok Bot every 2 s.
+        "turret": [(116, 9)],
         "next": None,
     },
 ]
@@ -147,7 +149,7 @@ HUD_ACTORS = 3
 def segment_bodies(segment: dict) -> list[tuple[str, int, int]]:
     """Every non-HUD actor in a half as (kind, x, y)."""
     bodies = []
-    for kind in ("blobs", "coins", "chips", "electrons", "flyers"):
+    for kind in ("blobs", "coins", "chips", "electrons", "flyers", "turret"):
         bodies.extend((kind, x, y) for x, y in segment.get(kind, []))
     return bodies
 
@@ -658,6 +660,49 @@ def paint_flyer() -> list[list[tuple[int, int, int, int]]]:
     return image
 
 
+def paint_turret() -> list[list[tuple[int, int, int, int]]]:
+    """Bolt Tower: a squat dome on a base with a stubby cannon and one eye."""
+    image = blank(16, 16, CLEAR)
+    for y in range(16):
+        for x in range(16):
+            dx = (x + 0.5 - 8) / 5.5
+            dy = (y + 0.5 - 9) / 5.0
+            if y <= 9 and dx * dx + dy * dy <= 1:
+                inner = dx * dx + dy * dy <= 0.6
+                image[y][x] = CHIP_BODY if inner else BLACK
+    for y in range(10, 16):
+        for x in range(2, 14):
+            edge = y in (10, 15) or x in (2, 13)
+            image[y][x] = BLACK if edge else CHIP_BODY
+    for x in range(4, 12, 3):
+        image[12][x] = SILVER
+        image[13][x] = SILVER
+    # Cannon on both sides so it reads as aiming either way.
+    for y in (6, 7):
+        for x in list(range(0, 3)) + list(range(13, 16)):
+            image[y][x] = BLACK if y == 6 else SILVER
+    for y in (5, 6, 7):
+        for x in (7, 8):
+            image[y][x] = SILVER
+    image[6][7] = BLACK
+    return image
+
+
+def paint_bolt() -> list[list[tuple[int, int, int, int]]]:
+    """Turret shot: a small hot energy ball, cream core in a red glow."""
+    image = blank(16, 16, CLEAR)
+    for y in range(16):
+        for x in range(16):
+            dist = (x + 0.5 - 8) ** 2 + (y + 0.5 - 8) ** 2
+            if dist <= 1.6**2:
+                image[y][x] = CREAM
+            elif dist <= 2.6**2:
+                image[y][x] = RED
+            elif dist <= 3.4**2:
+                image[y][x] = BLACK
+    return image
+
+
 def coin_total() -> int:
     return sum(len(segment["coins"]) for segment in SEGMENTS)
 
@@ -1024,7 +1069,7 @@ def tile_ref(name: str, x: int, slice_x: int, palette_index: int = 0) -> dict:
 # Scene sprite palette slots. In color mode GB Studio 4 reads the palette
 # from each sprite tile's paletteIndex (compileSprites.ts makeProps), not from
 # the actor's paletteId. Slot 0 is Grok Bot; the picker color swaps slot 0.
-SLOT = {"enemy": 1, "lives": 1, "electron": 2, "ammo": 2, "chip": 3, "coin": 4, "coinhud": 4, "flyer": 5}
+SLOT = {"enemy": 1, "lives": 1, "electron": 2, "ammo": 2, "chip": 3, "coin": 4, "coinhud": 4, "flyer": 5, "turret": 3, "bolt": 1}
 
 
 def frame_of(name: str, slice_x: int) -> dict:
@@ -1261,6 +1306,7 @@ def scene(
     collisions: list[int],
     parallax: list | None = None,
     scene_type: str = "PLATFORM",
+    player_hit3: list | None = None,
 ) -> dict:
     data = {
         "_resourceType": "scene",
@@ -1282,7 +1328,7 @@ def scene(
         "script": script,
         "playerHit1Script": [],
         "playerHit2Script": [],
-        "playerHit3Script": [],
+        "playerHit3Script": player_hit3 or [],
         "collisions": compress8(collisions),
     }
     if parallax:
@@ -1462,6 +1508,43 @@ def flyer_update(suffix: str) -> list:
         steps.append(move_path(f"{suffix}-path{index}", dx, dy))
     steps.append(wait_frames(f"{suffix}-path-wait", 10))
     return steps
+
+
+def launch_bolt(name: str) -> dict:
+    # Group 3 with mask "player": a hit runs the scene's player hit 3 script.
+    return event(
+        name,
+        "EVENT_LAUNCH_PROJECTILE",
+        {
+            "spriteSheetId": uid("sprite_bolt"),
+            "spriteStateId": uid("sprite_bolt-state"),
+            "actorId": "$self$",
+            "x": 0,
+            "y": 0,
+            "directionType": "target",
+            "targetActorId": "player",
+            "otherActorId": "$self$",
+            "direction": "left",
+            "speed": 2,
+            "animSpeed": 15,
+            "lifeTime": 2,
+            "initialOffset": 8,
+            "loopAnim": True,
+            "destroyOnHit": True,
+            "collisionGroup": "3",
+            "collisionMask": ["player"],
+        },
+    )
+
+
+def turret_update(suffix: str) -> list:
+    # Update scripts only run while the actor is on or near the screen, so it
+    # only fires once Grok Bot is close.
+    return [
+        wait_frames(f"{suffix}-reload", 120),
+        beep(f"{suffix}-fire-sound", 4),
+        launch_bolt(f"{suffix}-fire"),
+    ]
 
 
 def vanish_blob(suffix: str, bounce: bool) -> list:
@@ -1854,6 +1937,8 @@ def build_images() -> dict:
     write_png(sprites / "silicon_chip.png", 16, 16, paint_chip())
     write_png(sprites / "coin.png", 16, 16, paint_coin())
     write_png(sprites / "flyer.png", 32, 16, paint_flyer())
+    write_png(sprites / "turret.png", 16, 16, paint_turret())
+    write_png(sprites / "bolt.png", 16, 16, paint_bolt())
     write_png(sprites / "coin_hud.png", (coin_total() + 1) * 16, 16, paint_coin_hud())
     write_png(sprites / "lives.png", 64, 16, paint_lives())
     write_png(sprites / "ammo.png", ammo_frames * 16, 16, paint_ammo())
@@ -1929,6 +2014,8 @@ def write_segment(
             script=segment_init(segment),
             collisions=collisions,
             parallax=PARALLAX,
+            # Turret bolts (projectile group 3) hurt like a blob's side touch.
+            player_hit3=hurt_steps(f"{key}-bolt", segment) if segment.get("turret") else None,
         ),
     )
     next_index = 1
@@ -2056,6 +2143,24 @@ def write_segment(
             ),
         )
         next_index += 1
+    for index, (x, y) in enumerate(segment.get("turret", []), start=1):
+        suffix = f"{key}-turret{index}"
+        write_json(
+            actor_dir / f"turret_{index}.gbsres",
+            actor(
+                name=f"Bolt Tower {index}",
+                symbol=f"actor_{suffix}",
+                index=next_index,
+                x=x,
+                y=y,
+                sprite_symbol="sprite_turret",
+                palette_name="Chip Gray",
+                script=enemy_script(suffix, segment),
+                update_script=turret_update(suffix),
+                hit1_script=shot_blob(suffix),
+            ),
+        )
+        next_index += 1
     for chip_index, (chip_x, chip_y) in enumerate(segment["chips"], start=1):
         # The first chip keeps its original id and file name.
         suffix = f"{key}-chip" if chip_index == 1 else f"{key}-chip{chip_index}"
@@ -2177,6 +2282,21 @@ def build_resources(collisions: dict) -> None:
             num_tiles=2,
         ),
     )
+    for name in ("turret", "bolt"):
+        write_json(
+            sprites / f"{name}.png.gbsres",
+            sprite_resource(
+                name=name,
+                symbol=f"sprite_{name}",
+                filename=f"{name}.png",
+                image_path=sprites / f"{name}.png",
+                width=16,
+                height=16,
+                animation_type="fixed",
+                animations=fixed_animation(name),
+                num_tiles=2,
+            ),
+        )
     write_json(
         sprites / "flyer.png.gbsres",
         sprite_resource(
