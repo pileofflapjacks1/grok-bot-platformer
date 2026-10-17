@@ -1719,7 +1719,7 @@ def game_over(name: str, fade_out_first: bool, from_hit: bool = False) -> list:
         switch_scene(f"{name}-to-title", "scene_title", *MENU_PLAYER),
     ]
     if from_hit:
-        return steps + [if_value(f"{name}-over-check", HURT_LOCK, "==", 1, over, [fade(f"{name}-over-skip-in", "in")])]
+        return steps + [if_value(f"{name}-over-check", HURT_LOCK, "==", HURT_LIFE, over, [fade(f"{name}-over-skip-in", "in")])]
     return steps + over
 
 
@@ -1920,6 +1920,13 @@ def lose_power(name: str, segment: dict) -> list:
 # hurt_lock values: 0 free, 1 a hit script is running, 2 held by a pit fall
 # or the roadster cutscene (released only by that script or scene init).
 HURT_HOLD = 2
+# 3: a hit script is taking a life (claimed from 1 just before the
+# decrement). 4: a pit started while a hit was taking a life, so the pit
+# falls and respawns without taking a second one. The roadster counts down
+# from ROADSTER_HOLD + 60 to ROADSTER_HOLD, well clear of 0-4.
+HURT_LIFE = 3
+HURT_PIT_FREE = 4
+ROADSTER_HOLD = 10
 # Variable 3: 1 once the roadster has been touched. Every hurt path checks it
 # first, and again right before knockback (a hit script already running when
 # the roadster starts must not knock the player out of the cutscene).
@@ -1969,7 +1976,11 @@ def hurt_steps(suffix: str, segment: dict) -> list:
                     "4",
                     ">=",
                     3,
-                    lose_life(
+                    # Claim the life loss (1 -> 3). If a pit already holds the
+                    # lock (2), the pit takes the life and this hit does not.
+                    [if_value(f"{suffix}-life-claim", HURT_LOCK, "==", 1, [
+                    set_number(f"{suffix}-life-claimed", HURT_LOCK, HURT_LIFE),
+                    *lose_life(
                         suffix,
                         lives_symbol,
                         [
@@ -1986,6 +1997,10 @@ def hurt_steps(suffix: str, segment: dict) -> list:
                         ],
                         game_over(suffix, True, from_hit=True),
                     ),
+                    if_value(f"{suffix}-life-done", HURT_LOCK, "==", HURT_LIFE, [
+                        set_number(f"{suffix}-life-unclaim", HURT_LOCK, 1)
+                    ]),
+                    ])],
                 ),
                 wait_frames(f"{suffix}-hurt-grace", HURT_GRACE_FRAMES),
             ])]
@@ -2211,7 +2226,7 @@ def roadster_script(name: str, segment: dict) -> list:
         # player is re-hidden every frame for 60 frames: longer than a
         # powered hit's blink_player, which could otherwise show Grok Bot
         # beside the car.
-        set_number(f"{name}-hurt-hold", HURT_LOCK, HURT_HOLD + 60),
+        set_number(f"{name}-hurt-hold", HURT_LOCK, ROADSTER_HOLD + 60),
         set_engine(f"{name}-stop-vx", "plat_vel_x", 0),
         set_engine(f"{name}-stop-vy", "plat_vel_y", 0),
         no_fire(f"{name}-nofire"),
@@ -2225,7 +2240,7 @@ def roadster_script(name: str, segment: dict) -> list:
                 "condition": {
                     "type": "gt",
                     "valueA": {"type": "variable", "value": HURT_LOCK},
-                    "valueB": {"type": "number", "value": HURT_HOLD},
+                    "valueB": {"type": "number", "value": ROADSTER_HOLD},
                 }
             },
             {
@@ -2245,7 +2260,7 @@ def roadster_script(name: str, segment: dict) -> list:
         drive("roll", 1, 0, "horizontal"),
         # Kickflip: a short hop, one full turn through the rotation frames
         # (about 4 frames each), back to frame 0, then the climb as before.
-        beep(f"{name}-hop", 7),
+        beep(f"{name}-hop-sound", 7),
         drive("hop", 0, -1, "vertical"),
         *[
             step
@@ -2356,6 +2371,17 @@ def pit_script(name: str, segment: dict) -> list:
             ),
             wait_frames(f"{name}-fall-wait{index}", 3),
         ]
+    def alive(tag: str) -> list:
+        return respawn(tag, start_x, start_y) + [
+            event(f"{tag}-back", "EVENT_ACTOR_SHOW", {"actorId": "player"}),
+            attach_fire(segment, f"{tag}-refire"),
+            fade(f"{tag}-in", "in"),
+            # Respawn invulnerability: keep the pit's hold through the
+            # same grace window a normal hit gets, then release it.
+            wait_frames(f"{tag}-respawn-grace", HURT_GRACE_FRAMES),
+            set_number(f"{tag}-hurt-release", HURT_LOCK, 0),
+        ]
+
     return [
         event(f"{name}-freeze", "EVENT_PLATFORMER_STATE_SET", {"state": "blank"}),
         # Hold the hurt lock for the whole fall: a Bolt Tower bolt (the x=60
@@ -2364,7 +2390,16 @@ def pit_script(name: str, segment: dict) -> list:
         # script would set knockback mid-fall and could take a second life.
         # The alive path releases it after the respawn grace; Game Over
         # reloads the scene, whose init clears it.
-        set_number(f"{name}-hurt-hold", HURT_LOCK, HURT_HOLD),
+        # A hit already taking a life (3) means this pit must not take
+        # another: hold with HURT_PIT_FREE instead of HURT_HOLD.
+        if_value(
+            f"{name}-hurt-life-check",
+            HURT_LOCK,
+            "==",
+            HURT_LIFE,
+            [set_number(f"{name}-hurt-hold-free", HURT_LOCK, HURT_PIT_FREE)],
+            [set_number(f"{name}-hurt-hold", HURT_LOCK, HURT_HOLD)],
+        ),
         no_fire(f"{name}-nofire"),
         set_engine(f"{name}-stop-vx", "plat_vel_x", 0),
         set_engine(f"{name}-stop-vy", "plat_vel_y", 0),
@@ -2375,22 +2410,18 @@ def pit_script(name: str, segment: dict) -> list:
         fade(f"{name}-out", "out"),
         set_number(f"{name}-unpower", POWER_VAR, 0),
         *player_palette_events(f"{name}-unpower-pal"),
-        *lose_life(
-            name,
-            lives_symbol,
-            respawn(name, start_x, start_y)
-            + [
-                event(f"{name}-back", "EVENT_ACTOR_SHOW", {"actorId": "player"}),
-                attach_fire(segment, f"{name}-refire"),
-                fade(f"{name}-in", "in"),
-                # Respawn invulnerability: keep the pit's hold through the
-                # same grace window a normal hit gets, then release it.
-                wait_frames(f"{name}-respawn-grace", HURT_GRACE_FRAMES),
-                set_number(f"{name}-hurt-release", HURT_LOCK, 0),
-            ],
-            game_over(name, False),
+        if_value(
+            f"{name}-life-free",
+            HURT_LOCK,
+            "==",
+            HURT_PIT_FREE,
+            # The hit already took the life (and skips its own Game Over
+            # because the lock is no longer 3), so only check for 0 lives.
+            [if_value(f"{name}-free-dead", "1", "==", 0, game_over(f"{name}-free", False), alive(f"{name}-free"))],
+            lose_life(name, lives_symbol, alive(name), game_over(name, False)),
         ),
     ]
+
 
 
 def segment_init(segment: dict) -> list:
