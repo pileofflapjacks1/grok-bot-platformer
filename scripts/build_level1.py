@@ -2165,9 +2165,11 @@ def attach_fire(segment: dict, prefix: str | None = None) -> dict:
     key = prefix or segment["key"]
     ammo_symbol = f"actor_ammo_{segment['key']}"
     # Take the electron first, then launch only if the count did not go
-    # below 0. GBVM preempts a thread every 16 instructions, so a powered
-    # hit can zero the ammo between this script's ammo check and its
-    # decrement; the shot is then dropped and the count clamped back to 0.
+    # below 0. With today's code this branch cannot trigger: the ammo check
+    # and the decrement are the first instructions of a fresh input thread,
+    # inside one VM quantum, and new hit threads only start between frames.
+    # It stays as a cheap guard (2 events) so ammo can never go negative if
+    # events are ever added ahead of the decrement.
     shot = [
         event(f"{key}-shot-dec", "EVENT_DEC_VALUE", {"variable": "0"}),
         if_value(
