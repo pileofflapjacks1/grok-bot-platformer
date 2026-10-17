@@ -2662,7 +2662,9 @@ def build_images() -> dict:
             "collisions": collisions,
             "colors": colors,
         }
-    for key, painter in (("title", paint_title), ("picker", paint_picker)):
+    menu_painters = [("title", paint_title), ("picker", paint_picker)]
+    menu_painters += [(key, (lambda lines=lines: paint_boot(lines))) for key, lines in BOOT_SCREENS]
+    for key, painter in menu_painters:
         image, menu_collisions, menu_colors = painter()
         write_png(backgrounds / f"{key}.png", CLEAR_W * 8, CLEAR_H * 8, image)
         painted[key] = {
@@ -3088,7 +3090,7 @@ def build_resources(collisions: dict) -> None:
                 num_tiles=2,
             ),
         )
-    for key in ("title", "picker"):
+    for key in ["title", "picker"] + [key for key, _lines in BOOT_SCREENS]:
         write_json(
             backgrounds / f"{key}.png.gbsres",
             background_resource(
@@ -3137,6 +3139,8 @@ def build_resources(collisions: dict) -> None:
         palettes / "far_hills.gbsres",
         palette("Far Hills", ["B8F0E8", "F8FCFF", "70C0D8", "287090"]),
     )
+    # Boot cards: near-black navy backdrop, teal accent, off-white text.
+    write_json(palettes / "boot_dark.gbsres", palette("Boot Dark", ["101828", "60D8C8", "586078", "F0F0F0"]))
     write_json(
         palettes / "grok_bot.gbsres",
         palette("Grok Bot", GROK_COLORS[0][1]),
@@ -3199,6 +3203,7 @@ def build_resources(collisions: dict) -> None:
     for segment in SEGMENTS:
         write_segment(segment, collisions[segment["symbol"]]["collisions"], bg_ids, sprite_ids)
     write_menus(collisions, bg_ids, sprite_ids)
+    write_boot_scenes(collisions, sprite_ids)
 
 
 # Title and picker. Variables 6 and 7 hold the picker choice and are never
@@ -3624,6 +3629,143 @@ def write_menus(painted: dict, bg_ids: list[str], sprite_ids: list[str]) -> None
     )
 
 
+
+# ---------------------------------------------------------------------------
+# Boot screens (before the title, like a Game Boy studio card). Text only for
+# the names; no Nintendo-style logo scroll, no X or xAI marks. The start scene
+# is boot_1, so Game Over (which switches to scene_title) skips them.
+BOOT_SCREENS = [
+    ("boot_1", [("Created by", 0), ("@CardCaptain", 1)]),
+    ("boot_2", [("With the help of", 0), ("Grok 4.7 and", 0), ("Grok Bot Carty G", 1)]),
+]
+BOOT_HOLD_FRAMES = 105  # + ~0.5 s fade in/out each way: about 2.3 s per screen
+BOOT_BOT_AT = (9, 12)  # x 72-87: centred on the 160 px screen
+# 5x9 cells: rows 0-6 are cap height (the GLYPHS rows), 2-6 x-height,
+# 7-8 descenders. One character per 8 px column, so the text tiles dedupe.
+BOOT_GLYPHS = {
+    "a": ("00000", "00000", "01110", "00001", "01111", "10001", "01111", "00000", "00000"),
+    "b": ("10000", "10000", "11110", "10001", "10001", "10001", "11110", "00000", "00000"),
+    "d": ("00001", "00001", "01111", "10001", "10001", "10001", "01111", "00000", "00000"),
+    "e": ("00000", "00000", "01110", "10001", "11111", "10000", "01110", "00000", "00000"),
+    "f": ("00110", "01000", "11100", "01000", "01000", "01000", "01000", "00000", "00000"),
+    "h": ("10000", "10000", "11110", "10001", "10001", "10001", "10001", "00000", "00000"),
+    "i": ("00100", "00000", "01100", "00100", "00100", "00100", "01110", "00000", "00000"),
+    "k": ("10000", "10000", "10010", "10100", "11000", "10100", "10010", "00000", "00000"),
+    "l": ("01100", "00100", "00100", "00100", "00100", "00100", "01110", "00000", "00000"),
+    "n": ("00000", "00000", "11110", "10001", "10001", "10001", "10001", "00000", "00000"),
+    "o": ("00000", "00000", "01110", "10001", "10001", "10001", "01110", "00000", "00000"),
+    "p": ("00000", "00000", "11110", "10001", "10001", "10001", "11110", "10000", "10000"),
+    "r": ("00000", "00000", "10110", "11001", "10000", "10000", "10000", "00000", "00000"),
+    "t": ("01000", "01000", "11100", "01000", "01000", "01001", "00110", "00000", "00000"),
+    "y": ("00000", "00000", "10001", "10001", "10001", "10001", "01111", "00001", "01110"),
+    "4": ("00010", "00110", "01010", "10010", "11111", "00010", "00010", "00000", "00000"),
+    "7": ("11111", "00001", "00010", "00100", "01000", "01000", "01000", "00000", "00000"),
+    ".": ("00000", "00000", "00000", "00000", "00000", "01100", "01100", "00000", "00000"),
+    "@": ("01110", "10001", "10111", "10101", "10111", "10000", "01111", "00000", "00000"),
+}
+
+
+def boot_glyph(ch: str) -> tuple[str, ...]:
+    if ch in BOOT_GLYPHS:
+        return BOOT_GLYPHS[ch]
+    if ch == " ":
+        return ("00000",) * 9
+    return tuple(GLYPHS[ch]) + ("00000", "00000")
+
+
+def paint_boot(lines: list[tuple[str, int]]):
+    """Dark card, centred text. Color 0 is the backdrop, 1 the accent, 3 text."""
+    width, height = CLEAR_W * 8, CLEAR_H * 8
+    image = blank(width, height, SKY)
+    top = 60 - len(lines) * 8  # 16 px line pitch; the block is centred on y=60, above the bot
+    for row, (text, accent) in enumerate(lines):
+        if len(text) > CLEAR_W:
+            raise SystemExit(f"boot line too long for 20 columns: {text!r}")
+        col0 = (CLEAR_W - len(text)) // 2
+        # Odd lengths sit half a column right of true centre; nudge 4 px left.
+        nudge = -4 if (CLEAR_W - len(text)) % 2 else 0
+        color = GRASS_L if accent else OUTLINE
+        for index, ch in enumerate(text):
+            for gy, bits in enumerate(boot_glyph(ch)):
+                for gx, bit in enumerate(bits):
+                    if bit == "1":
+                        image[top + row * 16 + gy + 3][(col0 + index) * 8 + 1 + gx + nudge] = color
+    return image, [0] * (CLEAR_W * CLEAR_H), [0] * (CLEAR_W * CLEAR_H)
+
+
+def boot_script(key: str, next_symbol: str) -> list:
+    steps = [
+        hide_player(f"{key}-hide-player"),
+        *lock_dpad(key),
+        input_script(f"{key}-skip", ["start", "a"], [switch_scene(f"{key}-skip-go", "scene_title", *MENU_PLAYER)]),
+    ]
+    timed = []
+    if key == "boot_1":
+        # Three rising beeps: a tiny original jingle.
+        timed += [beep(f"{key}-jingle-1", 4), wait_frames(f"{key}-j1", 8), beep(f"{key}-jingle-2", 5),
+                  wait_frames(f"{key}-j2", 8), beep(f"{key}-jingle-3", 6)]
+    timed += [
+        wait_frames(f"{key}-hold", BOOT_HOLD_FRAMES),
+        switch_scene(f"{key}-next", next_symbol, *MENU_PLAYER),
+    ]
+    # The hold runs in a background thread: the scene init runs with the VM
+    # locked, so a wait inside it kept the Start/A skip from ever firing.
+    steps.append(event(f"{key}-timer-thread", "EVENT_THREAD_START", {"variable": "T0", "__scriptTabs": "true"}, {"true": timed}))
+    return steps
+
+
+def boot_bot_update(key: str) -> list:
+    """The bot hops in place: up 1 tile, down 1 tile, a short pause."""
+    def hop(name, dy):
+        return event(name, "EVENT_ACTOR_MOVE_RELATIVE", {
+            "actorId": "$self$", "x": {"type": "number", "value": 0}, "y": {"type": "number", "value": dy},
+            "units": "tiles", "moveType": "vertical", "useCollisions": False, "collideWith": []})
+    return [hop(f"{key}-hop-up", -1), hop(f"{key}-hop-down", 1), wait_frames(f"{key}-hop-rest", 20)]
+
+
+def write_boot_scenes(painted: dict, sprite_ids: list[str]) -> None:
+    scenes_dir = ROOT / "project" / "scenes"
+    base_x = world_x(len(SEGMENTS) + 1)
+    boot_bg = [uid("palette-Boot Dark")] + ["default-bg-2", "default-bg-3", "default-bg-4", "default-bg-5", "default-bg-6", "dmg", "default-ui"]
+    for index, (key, _lines) in enumerate(BOOT_SCREENS):
+        next_symbol = f"scene_{BOOT_SCREENS[index + 1][0]}" if index + 1 < len(BOOT_SCREENS) else "scene_title"
+        delete_gbsres(scenes_dir / key / "actors")
+        write_json(
+            scenes_dir / key / "scene.gbsres",
+            scene(
+                name=f"Boot {index + 1}",
+                symbol=f"scene_{key}",
+                index=len(SEGMENTS) + 2 + index,
+                x=base_x + (index + 2) * (CLEAR_W * 8 + SCENE_GAP),
+                y=40,
+                width=CLEAR_W,
+                height=CLEAR_H,
+                background_symbol=f"bg_{key}",
+                palette_ids=boot_bg,
+                sprite_palette_ids=sprite_ids,
+                script=boot_script(key, next_symbol),
+                collisions=painted[key]["collisions"],
+                scene_type="TOPDOWN",
+            ),
+        )
+        write_json(
+            scenes_dir / key / "actors" / "grok_bot.gbsres",
+            actor(
+                name="Boot Bot",
+                symbol=f"actor_{key}_bot",
+                index=0,
+                x=BOOT_BOT_AT[0],
+                y=BOOT_BOT_AT[1],
+                sprite_symbol=SHAPES[0],
+                palette_name="Grok Bot",
+                script=[],
+                update_script=boot_bot_update(key),
+                animate=False,
+                collision_group="",
+            ),
+        )
+
+
 def patch_project() -> None:
     metadata_path = ROOT / "GrokBotPlatformer.gbsproj"
     metadata = {
@@ -3649,7 +3791,7 @@ def patch_project() -> None:
     settings = json.loads(settings_path.read_text())
     player_id = uid("sprite_player_grok")
     settings["colorMode"] = "color"
-    settings["startSceneId"] = uid("scene_title")
+    settings["startSceneId"] = uid("scene_" + BOOT_SCREENS[0][0])
     settings["startX"] = MENU_PLAYER[0]
     settings["startY"] = MENU_PLAYER[1]
     settings["startDirection"] = "right"
@@ -4017,7 +4159,7 @@ def main() -> None:
             f"{info['tiles']} background tiles, scanline peak {scanline_peak(segment)}/10"
         )
         print("\n".join(layout_rows(segment)))
-    for key in ("title", "picker"):
+    for key in ["title", "picker"] + [key for key, _lines in BOOT_SCREENS]:
         tiles = painted[key]["tiles"]
         if tiles > 64:
             raise SystemExit(f"{key} has {tiles} background tiles")

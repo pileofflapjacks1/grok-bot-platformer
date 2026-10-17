@@ -1,0 +1,243 @@
+{
+  "_resourceType": "scene",
+  "id": "cc03f992-6501-5c95-9c16-f6a8ae232098",
+  "_index": 4,
+  "type": "TOPDOWN",
+  "name": "Boot 1",
+  "symbol": "scene_boot_1",
+  "x": 4880,
+  "y": 40,
+  "width": 20,
+  "height": 18,
+  "backgroundId": "db88c6e1-4907-5f11-96e6-2425effa953b",
+  "tilesetId": "",
+  "colorModeOverride": "none",
+  "paletteIds": [
+    "24d1f906-9620-5404-bc9f-57ea9f8195a5",
+    "default-bg-2",
+    "default-bg-3",
+    "default-bg-4",
+    "default-bg-5",
+    "default-bg-6",
+    "dmg",
+    "default-ui"
+  ],
+  "spritePaletteIds": [
+    "af2740b1-3780-5ae9-a09a-6b75f3d278a6",
+    "9fad4e98-3573-51c7-8d75-f32c6e7658b4",
+    "03d64715-00c7-5e01-950b-3a164fdc1907",
+    "cc7eb0dd-5bbf-548d-b532-c1a32b27b9ee",
+    "1df06e53-3ae5-5deb-aacc-a4e89fcd36a1",
+    "e4079bd9-48a3-55ed-88fa-7c855a5ee9d8",
+    "default-sprite",
+    "default-sprite"
+  ],
+  "autoFadeSpeed": 1,
+  "script": [
+    {
+      "id": "ad69304d-a5a8-5339-a42c-133dcf2b6990",
+      "command": "EVENT_ACTOR_HIDE",
+      "args": {
+        "actorId": "player"
+      }
+    },
+    {
+      "id": "b7b3cf27-081a-5709-8498-61729e3b43a2",
+      "command": "EVENT_SET_INPUT_SCRIPT",
+      "args": {
+        "input": [
+          "left"
+        ],
+        "override": true
+      },
+      "children": {
+        "true": []
+      }
+    },
+    {
+      "id": "4088d4bb-b7af-5378-862c-0369d3203a54",
+      "command": "EVENT_SET_INPUT_SCRIPT",
+      "args": {
+        "input": [
+          "right"
+        ],
+        "override": true
+      },
+      "children": {
+        "true": []
+      }
+    },
+    {
+      "id": "9e285b37-6a2c-521a-a56a-dac1e1a7fcc2",
+      "command": "EVENT_SET_INPUT_SCRIPT",
+      "args": {
+        "input": [
+          "up"
+        ],
+        "override": true
+      },
+      "children": {
+        "true": []
+      }
+    },
+    {
+      "id": "b547549f-495c-5548-ba5d-1bafc2ececa9",
+      "command": "EVENT_SET_INPUT_SCRIPT",
+      "args": {
+        "input": [
+          "down"
+        ],
+        "override": true
+      },
+      "children": {
+        "true": []
+      }
+    },
+    {
+      "id": "dde02a2e-1398-5937-b964-b5ece86704ec",
+      "command": "EVENT_SET_INPUT_SCRIPT",
+      "args": {
+        "input": [
+          "start",
+          "a"
+        ],
+        "override": true
+      },
+      "children": {
+        "true": [
+          {
+            "id": "0e728ff6-b57f-5b04-b7f7-1d9c2ecff3c8",
+            "command": "EVENT_SWITCH_SCENE",
+            "args": {
+              "sceneId": "f4feb5ff-a512-530c-89ba-80de8bd0ed21",
+              "x": {
+                "type": "number",
+                "value": 1
+              },
+              "y": {
+                "type": "number",
+                "value": 1
+              },
+              "direction": "right",
+              "fadeSpeed": "2"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "e9a69cee-0e6a-519c-8dab-b2c091c203dc",
+      "command": "EVENT_THREAD_START",
+      "args": {
+        "variable": "T0",
+        "__scriptTabs": "true"
+      },
+      "children": {
+        "true": [
+          {
+            "id": "16b3fc21-8f14-5689-8833-e9e27f93b323",
+            "command": "EVENT_SOUND_PLAY_EFFECT",
+            "args": {
+              "type": "beep",
+              "priority": "low",
+              "pitch": 4,
+              "duration": 0.12,
+              "units": "time",
+              "wait": false
+            }
+          },
+          {
+            "id": "50626f31-512d-53d4-9e1d-ceea052f0ed3",
+            "command": "EVENT_WAIT",
+            "args": {
+              "units": "frames",
+              "frames": {
+                "type": "number",
+                "value": 8
+              },
+              "time": {
+                "type": "number",
+                "value": 0.13
+              }
+            }
+          },
+          {
+            "id": "278c5972-cc8b-5adc-9d73-2ad7bc6bae5a",
+            "command": "EVENT_SOUND_PLAY_EFFECT",
+            "args": {
+              "type": "beep",
+              "priority": "low",
+              "pitch": 5,
+              "duration": 0.12,
+              "units": "time",
+              "wait": false
+            }
+          },
+          {
+            "id": "03185e89-1dd4-5575-9772-689ed5dfd81d",
+            "command": "EVENT_WAIT",
+            "args": {
+              "units": "frames",
+              "frames": {
+                "type": "number",
+                "value": 8
+              },
+              "time": {
+                "type": "number",
+                "value": 0.13
+              }
+            }
+          },
+          {
+            "id": "074e4184-b5c9-52ab-a3d6-677bc19a0322",
+            "command": "EVENT_SOUND_PLAY_EFFECT",
+            "args": {
+              "type": "beep",
+              "priority": "low",
+              "pitch": 6,
+              "duration": 0.12,
+              "units": "time",
+              "wait": false
+            }
+          },
+          {
+            "id": "42ba4fa4-1ed1-50a5-a7ed-f1bc404476cb",
+            "command": "EVENT_WAIT",
+            "args": {
+              "units": "frames",
+              "frames": {
+                "type": "number",
+                "value": 105
+              },
+              "time": {
+                "type": "number",
+                "value": 1.75
+              }
+            }
+          },
+          {
+            "id": "e5724538-649d-5194-a5f7-7b21351367c5",
+            "command": "EVENT_SWITCH_SCENE",
+            "args": {
+              "sceneId": "3ea86d7f-5ad6-56fb-9431-571f51abe058",
+              "x": {
+                "type": "number",
+                "value": 1
+              },
+              "y": {
+                "type": "number",
+                "value": 1
+              },
+              "direction": "right",
+              "fadeSpeed": "2"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "playerHit1Script": [],
+  "playerHit2Script": [],
+  "playerHit3Script": [],
+  "collisions": "00168+"
+}
