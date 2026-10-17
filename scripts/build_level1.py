@@ -1176,7 +1176,9 @@ def sprite_resource(
         "canvasOriginY": 0,
         "canvasWidth": canvas_width,
         "canvasHeight": 16,
-        "boundsX": 0,
+        # Bounds are relative to the same 16 px base as metasprite tiles, so a
+        # wider canvas starts (canvas_width / 2 - 8) px left of it.
+        "boundsX": min(0, 8 - canvas_width // 2),
         "boundsY": 0,
         "boundsWidth": canvas_width,
         "boundsHeight": 16,
@@ -1210,11 +1212,22 @@ def player_animations(prefix: str = "") -> list[dict]:
 
 
 def wide_animation(name: str, width: int) -> list[dict]:
-    """One frame built from width/8 8x16 tiles side by side."""
+    """One frame built from width/8 8x16 tiles side by side.
+
+    GB Studio places metasprite tile x relative to the 16 px base at the
+    centre of the canvas, not the canvas's left edge (originX = canvasWidth/2 - 8
+    in optimiseTiles, src/lib/sprites/readSpriteData.ts; MetaspriteEditor.tsx).
+    A tile that starts past the canvas is masked as Unknown, counts as blank,
+    and is dropped from the compiled frame. So a 32 px sheet's tiles go at
+    x = -8, 0, 8, 16.
+    """
     palette_index = SLOT.get(name, 0)
+    left = 8 - width // 2
     frame = {
         "id": uid(name + "-f0"),
-        "tiles": [tile_ref(f"{name}-t{index}", index * 8, index * 8, palette_index) for index in range(width // 8)],
+        "tiles": [
+            tile_ref(f"{name}-t{index}", left + index * 8, index * 8, palette_index) for index in range(width // 8)
+        ],
     }
     animations = [{"id": uid(name + "-anim0"), "frames": [frame]}]
     animations.extend(empty_frame(f"{name}-anim{index}") for index in range(1, 8))
