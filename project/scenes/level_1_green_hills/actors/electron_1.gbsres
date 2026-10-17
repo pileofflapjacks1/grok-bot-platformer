@@ -1,12 +1,12 @@
 {
   "_resourceType": "actor",
   "id": "33a99e09-1343-5e10-a3de-f1cac2b49cf3",
-  "_index": 8,
-  "symbol": "actor_hills-electron1",
+  "_index": 9,
+  "symbol": "actor_hills_electron1",
   "prefabId": "",
   "name": "Electron 1",
   "coordinateType": "tiles",
-  "x": 8,
+  "x": 60,
   "y": 10,
   "frame": 0,
   "animate": true,
@@ -22,10 +22,24 @@
   "prefabScriptOverrides": {},
   "script": [
     {
-      "id": "365df507-e113-5ebf-9a55-6b306128580f",
-      "command": "EVENT_INC_VALUE",
+      "id": "58ca4bb1-c62c-543c-b0f5-b2e5301bacc0",
+      "command": "EVENT_IF_VALUE",
       "args": {
-        "variable": "0"
+        "variable": "0",
+        "operator": "<",
+        "comparator": 8,
+        "__collapseElse": true
+      },
+      "children": {
+        "true": [
+          {
+            "id": "365df507-e113-5ebf-9a55-6b306128580f",
+            "command": "EVENT_INC_VALUE",
+            "args": {
+              "variable": "0"
+            }
+          }
+        ]
       }
     },
     {
@@ -36,6 +50,124 @@
         "frame": {
           "type": "variable",
           "value": "0"
+        }
+      }
+    },
+    {
+      "id": "59a7199b-ea35-51cd-aba7-6cc5f836589a",
+      "command": "EVENT_SET_VALUE",
+      "args": {
+        "variable": "8",
+        "value": {
+          "type": "add",
+          "valueA": {
+            "type": "variable",
+            "value": "8"
+          },
+          "valueB": {
+            "type": "number",
+            "value": 10
+          }
+        }
+      }
+    },
+    {
+      "id": "7b74ecf0-7cfe-5ca5-be72-4aff337036ab",
+      "command": "EVENT_IF_VALUE",
+      "args": {
+        "variable": "8",
+        "operator": ">",
+        "comparator": 9990,
+        "__collapseElse": true
+      },
+      "children": {
+        "true": [
+          {
+            "id": "cacbf320-5955-5e17-a21e-46f9b9b0f43c",
+            "command": "EVENT_SET_VALUE",
+            "args": {
+              "variable": "8",
+              "value": {
+                "type": "number",
+                "value": 9990
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "9042a89c-cbd4-5e10-8940-f33a6cc05900",
+      "command": "EVENT_ACTOR_SET_FRAME",
+      "args": {
+        "actorId": "6b9c3c90-1d5f-5844-9db1-2fa1d5e23caf",
+        "frame": {
+          "type": "mod",
+          "valueA": {
+            "type": "div",
+            "valueA": {
+              "type": "variable",
+              "value": "8"
+            },
+            "valueB": {
+              "type": "number",
+              "value": 1000
+            }
+          },
+          "valueB": {
+            "type": "number",
+            "value": 10
+          }
+        }
+      }
+    },
+    {
+      "id": "f5e916b6-dae3-5a0f-bfb4-8cb3b13f76b7",
+      "command": "EVENT_ACTOR_SET_FRAME",
+      "args": {
+        "actorId": "8f7f148a-d251-5478-a531-a7b08c2625d9",
+        "frame": {
+          "type": "mod",
+          "valueA": {
+            "type": "div",
+            "valueA": {
+              "type": "variable",
+              "value": "8"
+            },
+            "valueB": {
+              "type": "number",
+              "value": 100
+            }
+          },
+          "valueB": {
+            "type": "number",
+            "value": 10
+          }
+        }
+      }
+    },
+    {
+      "id": "d0a83071-ca42-5fe8-9d28-f907ebe57b5c",
+      "command": "EVENT_ACTOR_SET_FRAME",
+      "args": {
+        "actorId": "52b5f451-57cc-5a3c-aefe-534f230ae523",
+        "frame": {
+          "type": "mod",
+          "valueA": {
+            "type": "div",
+            "valueA": {
+              "type": "variable",
+              "value": "8"
+            },
+            "valueB": {
+              "type": "number",
+              "value": 10
+            }
+          },
+          "valueB": {
+            "type": "number",
+            "value": 10
+          }
         }
       }
     },
