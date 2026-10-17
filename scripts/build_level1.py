@@ -76,8 +76,12 @@ MUSIC_ID = "f50428ab-a084-4591-9bba-2ba10fe7b1c6"
 BASE_JUMP = 14336
 MAX_ACTORS = 20
 SCENE_GAP = 80
-LIVES_AT = (1, 0)
-AMMO_AT = (16, 0)
+# An actor's tile y is its sprite's BOTTOM 8 px row: GB Studio draws a 16 px
+# tall sprite from pixel 8*y - 8 to 8*y + 7. HUD sprites at y=0 therefore had
+# their top half above the screen. Row 1 puts the 16 px HUD at pixels 0..15.
+HUD_ROW = 1
+LIVES_AT = (1, HUD_ROW)
+AMMO_AT = (16, HUD_ROW)
 POWER_VAR = "9"
 SCORE_VAR = "8"
 # Score HUD: three pinned actors at tiles 7, 8 and 9-10 on the HUD row show
@@ -2702,7 +2706,7 @@ def write_segment(
                 symbol=f"actor_score_{tag}_{key}",
                 index=next_index,
                 x=SCORE_AT + offset,
-                y=0,
+                y=HUD_ROW,
                 sprite_symbol=sprite,
                 palette_name="Electron Blue",
                 script=[],
@@ -3791,12 +3795,13 @@ def scanline_peak(segment: dict) -> int:
     hud = [(LIVES_AT[0], LIVES_AT[1]), (AMMO_AT[0], AMMO_AT[1])]
     for left in range(0, SEG_W - 19):
         rows = [0] * (LEVEL_H + 2)
+        # A 16 px actor at tile y covers tile rows y-1 and y (see HUD_ROW).
         for _x, y in hud:
+            rows[y - 1] += 2
             rows[y] += 2
-            rows[y + 1] += 2
         # Score digits: 1 + 1 + 2 hardware sprites on the HUD row.
-        rows[0] += 4
-        rows[1] += 4
+        rows[HUD_ROW - 1] += 4
+        rows[HUD_ROW] += 4
         bolts = 0
         for kind, x, y in segment_bodies(segment):
             reach = PATROL.get(kind, 0)
