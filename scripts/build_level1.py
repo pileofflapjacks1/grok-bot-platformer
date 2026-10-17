@@ -352,6 +352,18 @@ def shift_frame(
 # the normal palettes, and the slot the power-up glow swaps. The eyes are
 # BLACK (color 3, palette color 3), black in every palette.
 # The list order is the picker order and the player_shape (var 6) value.
+# Player cell: PLAYER_PX x PLAYER_PX, drawn in a PLAYER_PX x PLAYER_CANVAS_H
+# canvas (two rows of 8x16 hardware tiles; GB Studio anchors the 16 px base at
+# the bottom centre). 24 px wide = 3 hardware sprites per scanline.
+PLAYER_PX = 24
+PLAYER_CANVAS_H = 32
+PLAYER_COLS = PLAYER_PX // 8
+# 8x16 tiles per sheet before GB Studio drops blank ones (4 frames).
+PLAYER_TILES = 4 * PLAYER_COLS * (PLAYER_CANVAS_H // 16)
+# Collision box (x, y, w, h) from the top-left of the 16 px base, y down: the
+# same 16 px width as before (pits, gaps and stomps keep their spacing), and
+# 22 px tall to cover most of the bigger body (the eyes row and below).
+PLAYER_BOUNDS = (0, -6, 16, 22)
 PLAYER_SHAPES = ["circle", "square", "heart", "star", "triangle", "teardrop", "oval", "blob"]
 PLAYER_FILES = {
     "circle": "player_grok.png",
@@ -426,7 +438,9 @@ def _inside(shape: str, x: float, y: float) -> bool:
         if (x - cx) ** 2 + (y - cy) ** 2 <= radius ** 2:
             return True
         d = cy - tip
-        if not tip <= y <= cy:
+        # The cone's sides touch the base circle at y = cy - radius^2 / d;
+        # below that the circle alone is the outline (no shelf).
+        if not tip <= y <= cy - radius * radius / d:
             return False
         half = math.asin(radius / d)
         return abs(x - cx) <= (y - tip) * math.tan(half)
@@ -448,20 +462,21 @@ def _inside(shape: str, x: float, y: float) -> bool:
 SUPERSAMPLED = {"heart", "star", "teardrop", "oval", "blob"}
 
 
-def _shape_mask(shape: str, dy: int) -> list[list[bool]]:
+def _shape_mask(shape: str, dy: int, n: int = 16) -> list[list[bool]]:
+    k = 16 / n
     if shape not in SUPERSAMPLED:
-        return [[_inside(shape, x + 0.5, y + 0.5 - dy) for x in range(16)] for y in range(16)]
-    n = 4
+        return [[_inside(shape, (x + 0.5) * k, (y + 0.5 - dy) * k) for x in range(n)] for y in range(n)]
+    ss = 4
     mask = []
-    for y in range(16):
+    for y in range(n):
         row = []
-        for x in range(16):
+        for x in range(n):
             hits = sum(
-                _inside(shape, x + (sx + 0.5) / n, y + (sy + 0.5) / n - dy)
-                for sy in range(n)
-                for sx in range(n)
+                _inside(shape, (x + (sx + 0.5) / ss) * k, (y + (sy + 0.5) / ss - dy) * k)
+                for sy in range(ss)
+                for sx in range(ss)
             )
-            row.append(hits * 2 >= n * n)
+            row.append(hits * 2 >= ss * ss)
         mask.append(row)
     # Drop one-pixel spurs (a pixel with at most one filled 4-neighbour) so
     # points and corners do not leave a stray outline pixel.
@@ -470,90 +485,110 @@ def _shape_mask(shape: str, dy: int) -> list[list[bool]]:
             [
                 mask[y][x]
                 and sum(
-                    0 <= y + oy < 16 and 0 <= x + ox < 16 and mask[y + oy][x + ox]
+                    0 <= y + oy < n and 0 <= x + ox < n and mask[y + oy][x + ox]
                     for ox, oy in ((1, 0), (-1, 0), (0, 1), (0, -1))
                 )
                 >= 2
-                for x in range(16)
+                for x in range(n)
             ]
-            for y in range(16)
+            for y in range(n)
         ]
     # Trim outline-only stubs: an outline pixel with no interior (fill) pixel
     # among its eight neighbours would be a black stub past a point.
     def edge_at(y: int, x: int) -> bool:
         return any(
-            not (0 <= y + oy < 16 and 0 <= x + ox < 16 and mask[y + oy][x + ox])
+            not (0 <= y + oy < n and 0 <= x + ox < n and mask[y + oy][x + ox])
             for ox, oy in ((1, 0), (-1, 0), (0, 1), (0, -1))
         )
 
-    interior = [[mask[y][x] and not edge_at(y, x) for x in range(16)] for y in range(16)]
+    interior = [[mask[y][x] and not edge_at(y, x) for x in range(n)] for y in range(n)]
     mask = [
         [
             mask[y][x]
             and any(
-                0 <= y + oy < 16 and 0 <= x + ox < 16 and interior[y + oy][x + ox]
+                0 <= y + oy < n and 0 <= x + ox < n and interior[y + oy][x + ox]
                 for ox in (-1, 0, 1)
                 for oy in (-1, 0, 1)
             )
-            for x in range(16)
+            for x in range(n)
         ]
-        for y in range(16)
+        for y in range(n)
     ]
     return mask
 
 
 EYE_SHIFTS = (2, 1)
+# At 24 px the star's eye row would cut into its arms; sit it 2 px lower.
+EYE_DROP_24 = {"star": 2}
 
 
-def draw_shape_bot(image, origin: int, dy: int, shape: str) -> None:
-    mask = _shape_mask(shape, dy)
-    for y in range(16):
-        for x in range(16):
+def draw_shape_bot(image, origin: int, dy: int, shape: str, n: int = 16, top: int = 0) -> None:
+    """One frame of a picker shape, n x n px, at (origin, top) in image.
+
+    The shape is re-rasterised at n px (not scaled pixels): _inside() is
+    sampled at n/16 resolution, so the 1 px outline stays 1 px. Eyes are
+    3x2 at 16 px and 5x3 with the corners cut (a short thick oval) at 24 px.
+    """
+    k = n / 16
+    mask = _shape_mask(shape, dy, n)
+    for y in range(n):
+        for x in range(n):
             if not mask[y][x]:
                 continue
             edge = any(
-                not (0 <= y + oy < 16 and 0 <= x + ox < 16 and mask[y + oy][x + ox])
+                not (0 <= y + oy < n and 0 <= x + ox < n and mask[y + oy][x + ox])
                 for ox, oy in ((1, 0), (-1, 0), (0, 1), (0, -1))
             )
-            image[y][origin + x] = GRAY if edge else WHITE
+            image[top + y][origin + x] = GRAY if edge else WHITE
     # Facing: the sheet faces right (flipLeft mirrors it for left). The
     # trailing (left) edge gets a 2 px outline, a darker back side, so even
     # the symmetric shapes read as pointing one way.
     back = [
         (y, x)
-        for y in range(16)
-        for x in range(1, 8)
-        if image[y][origin + x] == WHITE and image[y][origin + x - 1] == GRAY
+        for y in range(n)
+        for x in range(1, n // 2)
+        if image[top + y][origin + x] == WHITE and image[top + y][origin + x - 1] == GRAY
     ]
     for y, x in back:
-        image[y][origin + x] = GRAY
-    # Eyes: two short, thick horizontal black ovals, 3x2 px each, shifted
-    # toward the facing side by EYE_SHIFT px (2, or 1 where the shape is too
-    # narrow), staying on fill pixels so the outline stays closed.
-    eye_top, eye_xs = PLAYER_EYES[shape]
-    eye_y = eye_top + dy
+        image[top + y][origin + x] = GRAY
+    # Eyes: two short, thick horizontal black ovals, shifted toward the
+    # facing side (EYE_SHIFTS, scaled), staying on fill pixels.
+    eye_top16, eye_xs16 = PLAYER_EYES[shape]
+    if n == 16:
+        ew, eh, cut = 3, 2, False
+        eye_xs = eye_xs16
+    else:
+        ew, eh, cut = 5, 3, True
+        left = round(eye_xs16[0] * k)
+        eye_xs = (left, n - left - ew)
+    eye_y = round(eye_top16 * k) + EYE_DROP_24.get(shape, 0) * (n != 16) + dy
+    shifts = tuple(max(1, round(sh * k)) for sh in EYE_SHIFTS)
+
+    def cells(cx, shift):
+        for j in range(eh):
+            for i in range(ew):
+                if cut and j in (0, eh - 1) and i in (0, ew - 1):
+                    continue
+                yield eye_y + j, cx + shift + i
 
     def fits(shift: int) -> bool:
-        return all(
-            0 <= yy < 16 and image[yy][origin + xx] == WHITE
-            for cx in eye_xs
-            for yy in (eye_y, eye_y + 1)
-            for xx in range(cx + shift, cx + shift + 3)
-        )
+        return all(0 <= yy < n and image[top + yy][origin + xx] == WHITE for cx in eye_xs for yy, xx in cells(cx, shift))
 
-    shift = next((s for s in EYE_SHIFTS if fits(s)), 0)
+    shift = next((sh for sh in shifts if fits(sh)), 0)
     for cx in eye_xs:
-        for yy in (eye_y, eye_y + 1):
-            for xx in range(cx + shift, cx + shift + 3):
-                if 0 <= yy < 16 and image[yy][origin + xx][3]:
-                    image[yy][origin + xx] = BLACK
+        for yy, xx in cells(cx, shift):
+            if 0 <= yy < n and image[top + yy][origin + xx][3]:
+                image[top + yy][origin + xx] = BLACK
 
 
 def paint_shape_player(shape: str):
-    """Four frames: idle, walk A (bob down), walk B, jump (up). Left is mirrored."""
-    image = blank(64, 16, CLEAR)
+    """Four frames: idle, walk A (bob down), walk B, jump (up). Left is mirrored.
+
+    Each frame is PLAYER_PX wide in a PLAYER_CANVAS_H tall cell, art at the bottom.
+    """
+    image = blank(4 * PLAYER_PX, PLAYER_CANVAS_H, CLEAR)
     for frame, dy in enumerate((0, 1, 0, -1)):
-        draw_shape_bot(image, frame * 16, dy, shape)
+        draw_shape_bot(image, frame * PLAYER_PX, dy, shape, PLAYER_PX, PLAYER_CANVAS_H - PLAYER_PX)
     return image
 
 
@@ -572,7 +607,8 @@ def draw_blob(
     left_foot: int,
     right_foot: int,
 ) -> None:
-    cx, cy, rx, ry = 8.0, 8.0 + bob, 6.5, 5.6
+    # Fills more of the 16 px cell (was rx 6.5, ry 5.6): bigger, same 2 sprites/line.
+    cx, cy, rx, ry = 8.0, 7.6 + bob, 7.6, 6.6
     for y in range(16):
         for x in range(16):
             dx = (x + 0.5 - cx) / rx
@@ -634,20 +670,35 @@ def paint_foot(
 def paint_electron() -> list[list[tuple[int, int, int, int]]]:
     """Small charged orb. The bar in the middle is the electron's minus."""
     image = blank(16, 16, CLEAR)
-    radius = 4.3
+    radius = 5.4  # was 4.3
     for y in range(16):
         for x in range(16):
             dx = x + 0.5 - 8
             dy = y + 0.5 - 8
             dist = dx * dx + dy * dy
-            if dist <= 1.7 * 1.7:
+            if dist <= 2.1 * 2.1:
                 image[y][x] = E_WHITE
             elif dist <= (radius - 1.15) ** 2:
                 image[y][x] = CYAN
             elif dist <= radius * radius:
                 image[y][x] = BLUE
-    for x in range(6, 10):
+    for x in range(5, 11):
         image[8][x] = BLUE
+    return image
+
+
+def paint_shot() -> list[list[tuple[int, int, int, int]]]:
+    """Electron shot: a 7 px orb in the left 8 px column (1 sprite per line)."""
+    image = blank(16, 16, CLEAR)
+    for y in range(16):
+        for x in range(8):
+            dist = (x + 0.5 - 4) ** 2 + (y + 0.5 - 8) ** 2
+            if dist <= 1.5**2:
+                image[y][x] = E_WHITE
+            elif dist <= 2.5**2:
+                image[y][x] = CYAN
+            elif dist <= 3.4**2:
+                image[y][x] = BLUE
     return image
 
 
@@ -668,8 +719,8 @@ def paint_flyer() -> list[list[tuple[int, int, int, int]]]:
                     image[y][ox + wx] = BLACK if x == 0 or y == wing_rows[0][0] else WHITE
         for y in range(16):
             for x in range(16):
-                dx = (x + 0.5 - 8) / 4.6
-                dy = (y + 0.5 - 8) / 4.2
+                dx = (x + 0.5 - 8) / 5.6  # was 4.6 x 4.2
+                dy = (y + 0.5 - 8) / 5.2
                 dist = dx * dx + dy * dy
                 if dist <= 0.62:
                     image[y][ox + x] = VIOLET
@@ -680,8 +731,8 @@ def paint_flyer() -> list[list[tuple[int, int, int, int]]]:
         image[7][ox + 7] = BLACK
         image[7][ox + 8] = BLACK
         # Little feet so it reads as a bot, not a ball.
-        image[12][ox + 6] = BLACK
-        image[12][ox + 9] = BLACK
+        image[13][ox + 6] = BLACK
+        image[13][ox + 9] = BLACK
     return image
 
 
@@ -690,14 +741,14 @@ def paint_turret() -> list[list[tuple[int, int, int, int]]]:
     image = blank(16, 16, CLEAR)
     for y in range(16):
         for x in range(16):
-            dx = (x + 0.5 - 8) / 5.5
-            dy = (y + 0.5 - 9) / 5.0
+            dx = (x + 0.5 - 8) / 6.8  # was 5.5 x 5.0
+            dy = (y + 0.5 - 9) / 6.4
             if y <= 9 and dx * dx + dy * dy <= 1:
                 inner = dx * dx + dy * dy <= 0.6
                 image[y][x] = CHIP_BODY if inner else BLACK
     for y in range(10, 16):
-        for x in range(2, 14):
-            edge = y in (10, 15) or x in (2, 13)
+        for x in range(1, 15):
+            edge = y in (10, 15) or x in (1, 14)
             image[y][x] = BLACK if edge else CHIP_BODY
     for x in range(4, 12, 3):
         image[12][x] = SILVER
@@ -718,7 +769,9 @@ def paint_bolt() -> list[list[tuple[int, int, int, int]]]:
     image = blank(16, 16, CLEAR)
     for y in range(16):
         for x in range(16):
-            dist = (x + 0.5 - 8) ** 2 + (y + 0.5 - 8) ** 2
+            # Centred in the LEFT 8 px column: GB Studio drops the blank right
+            # tile, so a bolt costs 1 hardware sprite per line, not 2.
+            dist = (x + 0.5 - 4) ** 2 + (y + 0.5 - 8) ** 2
             if dist <= 1.6**2:
                 image[y][x] = CREAM
             elif dist <= 2.6**2:
@@ -935,18 +988,19 @@ def paint_score_digits(with_zero: bool) -> list[list[tuple[int, int, int, int]]]
 def paint_chip() -> list[list[tuple[int, int, int, int]]]:
     """A silicon package: silver pins, dark body, black die."""
     image = blank(16, 16, CLEAR)
-    for y in (5, 7, 9, 11):
-        for x in (1, 2, 13, 14):
+    # Bigger than the first chip (body 10x9): body 12x11, pins at the edges.
+    for y in (4, 6, 8, 10, 12):
+        for x in (0, 1, 14, 15):
             image[y][x] = SILVER
-    for y in range(4, 13):
-        for x in range(3, 13):
+    for y in range(3, 14):
+        for x in range(2, 14):
             image[y][x] = CHIP_BODY
-    for x in range(3, 13):
-        image[4][x] = BLACK
-        image[12][x] = BLACK
-    for y in range(4, 13):
-        image[y][3] = BLACK
-        image[y][12] = BLACK
+    for x in range(2, 14):
+        image[3][x] = BLACK
+        image[13][x] = BLACK
+    for y in range(3, 14):
+        image[y][2] = BLACK
+        image[y][13] = BLACK
     for y in range(6, 11):
         for x in range(6, 10):
             image[y][x] = BLACK
@@ -1003,11 +1057,18 @@ def paint_ammo() -> list[list[tuple[int, int, int, int]]]:
     On the Electron Blue palette, BLUE is slot 3 and E_WHITE is slot 1.
     """
     count = electron_total() + 1
-    image = blank(count * 16, 16, BLUE)
+    if count > 10:
+        raise SystemExit("the one-digit ammo badge needs electron_total() <= 9")
+    # One digit on an 8 px plate in each 16 px frame; GB Studio drops the
+    # blank right tile, so the badge costs 1 hardware sprite per line (was 2),
+    # which leaves room for the 24 px player in the HUD band.
+    image = blank(count * 16, 16, CLEAR)
     for value in range(count):
         origin = value * 16
-        draw_digit(image, origin + 1, 3, value // 10, E_WHITE, 2)
-        draw_digit(image, origin + 8, 3, value % 10, E_WHITE, 2)
+        for y in range(16):
+            for x in range(8):
+                image[y][origin + x] = BLUE
+        draw_digit(image, origin + 1, 3, value, E_WHITE, 2)
     return image
 
 
@@ -1268,7 +1329,7 @@ def tile_ref(name: str, x: int, slice_x: int, palette_index: int = 0, y: int = 0
 # Scene sprite palette slots. In color mode GB Studio 4 reads the palette
 # from each sprite tile's paletteIndex (compileSprites.ts makeProps), not from
 # the actor's paletteId. Slot 0 is Grok Bot; the picker color swaps slot 0.
-SLOT = {"scoredigit": 2, "scoretens": 2, "enemy": 1, "lives": 1, "electron": 2, "ammo": 2, "chip": 3, "flyer": 5, "turret": 3, "bolt": 1, "roadster": 4}
+SLOT = {"shot": 2, "scoredigit": 2, "scoretens": 2, "enemy": 1, "lives": 1, "electron": 2, "ammo": 2, "chip": 3, "flyer": 5, "turret": 3, "bolt": 1, "roadster": 4}
 
 
 def frame_of(name: str, slice_x: int, y: int = 0) -> dict:
@@ -1337,15 +1398,33 @@ def sprite_resource(
     }
 
 
+def player_frame(name: str, index: int) -> dict:
+    """PLAYER_COLS x 2 tiles of 8x16. Tile x is relative to the centred 16 px
+    base (x = 8 - width/2 + 8i, see wide_animation); tile y counts up from the
+    base: y=0 is the bottom 16 rows of the canvas, y=16 the 16 above."""
+    if PLAYER_PX == 16 and PLAYER_CANVAS_H == 16:
+        return frame_of(name, index * 16)
+    palette_index = SLOT.get(name.split("-")[0], 0)
+    left = 8 - PLAYER_PX // 2
+    tiles = []
+    for row, tile_y in enumerate((16, 0)):
+        for col in range(PLAYER_COLS):
+            ref = tile_ref(f"{name}-r{row}-c{col}", left + col * 8, index * PLAYER_PX + col * 8, palette_index)
+            ref["y"] = tile_y
+            ref["sliceY"] = row * 16 + (PLAYER_CANVAS_H - 32)
+            tiles.append(ref)
+    return {"id": uid(name), "tiles": tiles}
+
+
 def player_animations(prefix: str = "") -> list[dict]:
     # Engine slots: idle R, idle L, jump R, jump L, move R, move L, climb, spare.
     # Left-facing slots stay empty because flipLeft mirrors the right-facing art.
     # The round sheet keeps its original ids; the square sheet adds a prefix.
     p = prefix + "player"
-    idle = frame_of(f"{p}-idle", 0)
-    walk_a = frame_of(f"{p}-walk-a", 16)
-    walk_b = frame_of(f"{p}-walk-b", 32)
-    jump = frame_of(f"{p}-jump", 48)
+    idle = player_frame(f"{p}-idle", 0)
+    walk_a = player_frame(f"{p}-walk-a", 1)
+    walk_b = player_frame(f"{p}-walk-b", 2)
+    jump = player_frame(f"{p}-jump", 3)
     return [
         {"id": uid(f"{p}-anim-idle"), "frames": [idle]},
         empty_frame(f"{p}-anim-idle-left"),
@@ -2186,8 +2265,8 @@ def launch_electron(name: str) -> dict:
         name,
         "EVENT_LAUNCH_PROJECTILE",
         {
-            "spriteSheetId": uid("sprite_electron"),
-            "spriteStateId": uid("sprite_electron-state"),
+            "spriteSheetId": uid("sprite_shot"),
+            "spriteStateId": uid("sprite_shot-state"),
             "actorId": "player",
             "x": 0,
             "y": 2,
@@ -2582,7 +2661,8 @@ def write_shapes_sheet(path: Path) -> None:
     the idle frame in Grok Red, Grok Yellow, and Grok Teal, as GB Studio's
     sprite palette slot 0 would color it. Scaled 4x on a sky backdrop.
     """
-    scale, cell, gap = 4, 16, 2
+    scale, cell, gap = 4, PLAYER_PX, 2
+    top = PLAYER_CANVAS_H - PLAYER_PX
     columns = 4 + len(GROK_COLORS) - 1
     width = (columns * (cell + gap) + gap) * scale
     height = (len(PLAYER_SHAPES) * (cell + gap) + gap) * scale
@@ -2604,7 +2684,7 @@ def write_shapes_sheet(path: Path) -> None:
             oy = (gap + row * (cell + gap)) * scale
             for y in range(cell):
                 for x in range(cell):
-                    color = recolor(frames[y][frame * cell + x], colors)
+                    color = recolor(frames[top + y][frame * cell + x], colors)
                     if color is None:
                         continue
                     for sy in range(scale):
@@ -2618,12 +2698,13 @@ def build_images() -> dict:
     backgrounds = ROOT / "assets" / "backgrounds"
     ammo_frames = electron_total() + 1
     for shape in PLAYER_SHAPES:
-        write_png_indexed(sprites / PLAYER_FILES[shape], 64, 16, paint_shape_player(shape), PLAYER_INDEXED)
+        write_png_indexed(sprites / PLAYER_FILES[shape], 4 * PLAYER_PX, PLAYER_CANVAS_H, paint_shape_player(shape), PLAYER_INDEXED)
     write_shapes_sheet(ROOT / "docs" / "shapes-sheet.png")
     for index, part in enumerate(paint_press_start()):
         write_png(sprites / f"press_start_{index}.png", 16, 16, part)
     write_png(sprites / "enemy_red_blob.png", 32, 16, paint_enemy())
     write_png(sprites / "electron.png", 16, 16, paint_electron())
+    write_png(sprites / "shot.png", 16, 16, paint_shot())
     write_png(sprites / "silicon_chip.png", 16, 16, paint_chip())
     write_png(sprites / "flyer.png", 32, 16, paint_flyer())
     write_png(sprites / "score_digit.png", 160, 16, paint_score_digits(False))
@@ -2920,11 +3001,14 @@ def build_resources(collisions: dict) -> None:
             symbol="sprite_player_grok",
             filename="player_grok.png",
             image_path=sprites / "player_grok.png",
-            width=64,
-            height=16,
+            width=4 * PLAYER_PX,
+            height=PLAYER_CANVAS_H,
+            canvas_width=PLAYER_PX,
+            canvas_height=PLAYER_CANVAS_H,
+            bounds=PLAYER_BOUNDS,
             animation_type="platform_player",
             animations=player_animations(),
-            num_tiles=8,
+            num_tiles=PLAYER_TILES,
         ),
     )
     write_json(
@@ -2953,6 +3037,21 @@ def build_resources(collisions: dict) -> None:
             animation_type="fixed",
             animations=fixed_animation("electron"),
             num_tiles=2,
+        ),
+    )
+    write_json(
+        sprites / "shot.png.gbsres",
+        sprite_resource(
+            name="shot",
+            symbol="sprite_shot",
+            filename="shot.png",
+            image_path=sprites / "shot.png",
+            width=16,
+            height=16,
+            animation_type="fixed",
+            animations=fixed_animation("shot"),
+            num_tiles=1,
+            bounds=(0, 4, 8, 8),
         ),
     )
     write_json(
@@ -2999,7 +3098,7 @@ def build_resources(collisions: dict) -> None:
                 animations=fixed_animation(name),
                 num_tiles=2,
                 # The bolt is a ~7 px ball: an 8x8 centred box, so near misses miss.
-                bounds=(4, 4, 8, 8) if name == "bolt" else None,
+                bounds=(0, 4, 8, 8) if name == "bolt" else None,
             ),
         )
     for name, tag in (("score_digit", "scoredigit"), ("score_tens", "scoretens")):
@@ -3052,11 +3151,14 @@ def build_resources(collisions: dict) -> None:
             symbol="sprite_player_grok_square",
             filename="player_grok_square.png",
             image_path=sprites / "player_grok_square.png",
-            width=64,
-            height=16,
+            width=4 * PLAYER_PX,
+            height=PLAYER_CANVAS_H,
+            canvas_width=PLAYER_PX,
+            canvas_height=PLAYER_CANVAS_H,
+            bounds=PLAYER_BOUNDS,
             animation_type="platform_player",
             animations=player_animations("square-"),
-            num_tiles=8,
+            num_tiles=PLAYER_TILES,
         ),
     )
     for shape in PLAYER_SHAPES[2:]:
@@ -3068,11 +3170,14 @@ def build_resources(collisions: dict) -> None:
                 symbol="sprite_" + name,
                 filename=PLAYER_FILES[shape],
                 image_path=sprites / PLAYER_FILES[shape],
-                width=64,
-                height=16,
+                width=4 * PLAYER_PX,
+                height=PLAYER_CANVAS_H,
+                canvas_width=PLAYER_PX,
+                canvas_height=PLAYER_CANVAS_H,
+                bounds=PLAYER_BOUNDS,
                 animation_type="platform_player",
                 animations=player_animations(shape + "-"),
-                num_tiles=8,
+                num_tiles=PLAYER_TILES,
             ),
         )
     for index in range(PRESS_PARTS):
@@ -3246,7 +3351,8 @@ PRESS_TEXT = "PRESS START"
 PRESS_PARTS = 4
 PRESS_AT = (6, 11)
 TITLE_BOT_AT = (9, CLEAR_TOP - 2)
-PICKER_BOT_AT = (9, 9)
+# A 24 px player grows 8 px upward; one row lower keeps it and the arrows off the hills.
+PICKER_BOT_AT = (9, 9 + (PLAYER_PX > 16))
 
 GLYPHS = {
     "A": ("01110", "10001", "10001", "11111", "10001", "10001", "10001"),
@@ -3353,7 +3459,8 @@ def paint_picker():
     # right-hand hill) and the arrows' top is now 2 px above its cell bottom
     # row, centring them on the body. The right arrow moves 1 px right so the
     # tip-to-tip span (49..110) centres at 79.5, like the even-width bodies.
-    arrow_y = PICKER_BOT_AT[1] * 8 - 2
+    # A taller player sheet grows upward from the base, so raise the arrows by half the extra height.
+    arrow_y = PICKER_BOT_AT[1] * 8 - 2 - (PLAYER_PX - 16) // 2
     draw_text(image, (PICKER_BOT_AT[0] - 3) * 8, arrow_y, "<", OUTLINE)
     draw_text(image, (PICKER_BOT_AT[0] + 4) * 8 + 1, arrow_y, ">", OUTLINE)
     draw_text(image, 7 * 8, 14 * 8, "A = GO", OUTLINE)
@@ -3961,6 +4068,10 @@ def required_rise(stand_y: int, actor_y: int) -> int:
 # Hardware sprites (8x16 mode) per 16 px actor, and how far each kind can
 # drift from its placed tile while patrolling (for the scanline check).
 HW_SPRITES = {"roadster": 4}
+# Hardware sprites per scanline of the narrow (8 px) shot, bolt and ammo badge.
+SHOT_HW = 1
+BOLT_HW = 1
+AMMO_HW = 1
 PATROL = {"blobs": 3, "flyers": 4}
 
 
@@ -3997,9 +4108,9 @@ def scanline_peak(segment: dict) -> int:
         rows = [0] * (LEVEL_H + 2)
         # A 16 px actor at tile y covers tile rows y-1 and y (see HUD_ROW);
         # the 2 px nudge spills into row y+1.
-        for _x, y in hud:
+        for (_x, y), width in zip(hud, (2, AMMO_HW)):
             for row in (y - 1, y, y + 1):
-                rows[row] += 2
+                rows[row] += width
         # Score digits: 1 + 1 + 2 hardware sprites on the HUD row.
         for row in (HUD_ROW - 1, HUD_ROW, HUD_ROW + 1):
             rows[row] += 4
@@ -4014,7 +4125,7 @@ def scanline_peak(segment: dict) -> int:
                 # A bolt from a tower that can chain with another tower in
                 # view (see towers_can_chain) may still be alive when the next
                 # tower fires, so two bolts can share the screen.
-                bolts = max(bolts, 4 if tower_chains(segment, x) else 2)
+                bolts = max(bolts, 2 * BOLT_HW if tower_chains(segment, x) else BOLT_HW)
             # Flyers bob one row up from their placed row.
             top = y - 1 if kind == "flyers" else y
             for row in range(top, y + 2):
@@ -4026,9 +4137,9 @@ def scanline_peak(segment: dict) -> int:
         # so the player is counted there too. KNOWN LIMIT: a shot or bolt fired
         # at the top of such a jump can push those lines past 10, and the GBC
         # then drops a sprite on those lines for those frames.
-        moving = 2 + MAX_SHOTS * 2 + bolts
+        moving = PLAYER_COLS + MAX_SHOTS * SHOT_HW + bolts
         band = HUD_ROW + 2
-        worst = max(worst, max(rows[:band]) + 2, max(rows[band:]) + moving)
+        worst = max(worst, max(rows[:band]) + PLAYER_COLS, max(rows[band:]) + moving)
     return worst
 
 
