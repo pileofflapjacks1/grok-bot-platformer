@@ -1071,14 +1071,6 @@ def paint_segment(segment: dict) -> tuple[list[list[tuple[int, int, int, int]]],
     return paint_level(SEG_W, LEVEL_H, lambda tile_x: solid_top(segment, tile_x))
 
 
-def paint_clear() -> tuple[list[list[tuple[int, int, int, int]]], list[int], list[int]]:
-    def solid_at(tile_x: int) -> int:
-        del tile_x
-        return CLEAR_TOP
-
-    return paint_level(CLEAR_W, CLEAR_H, solid_at)
-
-
 def unique_tiles(image: list[list[tuple[int, int, int, int]]], tile: int = 8) -> int:
     height = len(image)
     width = len(image[0])
@@ -1953,15 +1945,22 @@ def roadster_script(name: str) -> list:
         event(f"{name}-gone", "EVENT_ACTOR_HIDE", {"actorId": "$self$"}),
         beep(f"{name}-whoosh", 10),
         wait_frames(f"{name}-beat", 20),
-        # The clear scene shows LEVEL CLEAR once, for this path and the fallback exit.
-        *exit_script(name),
+        # LEVEL 1 CLEAR is shown once, here or by the fallback exit, never both.
+        *exit_script(name, name.split("-")[0]),
     ]
 
 
-def exit_script(prefix: str = "exit") -> list:
-    # Each caller passes its own prefix so no event id is shared between the
-    # roadster and the fallback exit trigger. "exit" keeps the trigger's id.
-    return [switch_scene(f"{prefix}-clear", "scene_level1_clear", 2, CLEAR_TOP - 2)]
+def exit_script(prefix: str, key: str) -> list:
+    """Clear bonus, one LEVEL 1 CLEAR box with the final score, then the title.
+
+    Each caller passes its own prefix so no event id is shared between the
+    roadster and the fallback exit trigger. There is no separate clear scene.
+    """
+    return [
+        *add_score(f"{prefix}-bonus", key, POINTS["clear"]),
+        event(f"{prefix}-clear-text", "EVENT_TEXT", {"text": f"LEVEL 1 CLEAR\nSCORE ${SCORE_VAR}$"}),
+        switch_scene(f"{prefix}-to-title", "scene_title", *MENU_PLAYER),
+    ]
 
 
 def respawn(name: str, x: int, y: int) -> list:
@@ -2176,13 +2175,6 @@ def build_images() -> dict:
             "collisions": collisions,
             "colors": colors,
         }
-    clear, clear_collisions, clear_colors = paint_clear()
-    write_png(backgrounds / "level1_clear.png", CLEAR_W * 8, CLEAR_H * 8, clear)
-    painted["clear"] = {
-        "tiles": unique_tiles(clear),
-        "collisions": clear_collisions,
-        "colors": clear_colors,
-    }
     for key, painter in (("title", paint_title), ("picker", paint_picker)):
         image, menu_collisions, menu_colors = painter()
         write_png(backgrounds / f"{key}.png", CLEAR_W * 8, CLEAR_H * 8, image)
@@ -2415,7 +2407,7 @@ def write_segment(
     gate_script = (
         [switch_scene(f"{key}-continue", segment["next"], PLAYER_START[0], PLAYER_START[1])]
         if segment["next"]
-        else exit_script()
+        else exit_script("exit", key)
     )
     gate_name = "Continue" if segment["next"] else "Exit"
     gate_symbol = f"trigger_continue_{key}" if segment["next"] else "trigger_exit"
@@ -2647,17 +2639,6 @@ def build_resources(collisions: dict) -> None:
                 tile_colors=collisions[segment["symbol"]]["colors"],
             ),
         )
-    write_json(
-        backgrounds / "level1_clear.png.gbsres",
-        background_resource(
-            name="level1_clear",
-            symbol="bg_level1_clear",
-            filename="level1_clear.png",
-            tiles_x=CLEAR_W,
-            tiles_y=CLEAR_H,
-            tile_colors=collisions["clear"]["colors"],
-        ),
-    )
 
     palettes = ROOT / "project" / "palettes"
     write_json(
@@ -2725,27 +2706,6 @@ def build_resources(collisions: dict) -> None:
 
     for segment in SEGMENTS:
         write_segment(segment, collisions[segment["symbol"]]["collisions"], bg_ids, sprite_ids)
-    write_json(
-        ROOT / "project" / "scenes" / "level_1_clear" / "scene.gbsres",
-        scene(
-            name="Level 1 Clear",
-            symbol="scene_level1_clear",
-            index=len(SEGMENTS),
-            x=world_x(len(SEGMENTS)),
-            y=40,
-            width=CLEAR_W,
-            height=CLEAR_H,
-            background_symbol="bg_level1_clear",
-            palette_ids=bg_ids,
-            sprite_palette_ids=sprite_ids,
-            script=[
-                event("clear-text", "EVENT_TEXT", {"text": "LEVEL CLEAR"}),
-                wait_frames("clear-wait", 30),
-                switch_scene("clear-to-title", "scene_title", *MENU_PLAYER),
-            ],
-            collisions=collisions["clear"]["collisions"],
-        ),
-    )
     write_menus(collisions, bg_ids, sprite_ids)
 
 
@@ -3093,7 +3053,7 @@ def write_menus(painted: dict, bg_ids: list[str], sprite_ids: list[str]) -> None
             scene(
                 name=key.title(),
                 symbol=f"scene_{key}",
-                index=len(SEGMENTS) + (1 if key == "title" else 2),
+                index=len(SEGMENTS) + (0 if key == "title" else 1),
                 x=x,
                 y=40,
                 width=CLEAR_W,
@@ -3510,9 +3470,7 @@ def main() -> None:
             f"{info['tiles']} background tiles, scanline peak {scanline_peak(segment)}/10"
         )
         print("\n".join(layout_rows(segment)))
-    if len(painted["clear"]["collisions"]) != CLEAR_W * CLEAR_H:
-        raise SystemExit("clear collision size mismatch")
-    for key in ("clear", "title", "picker"):
+    for key in ("title", "picker"):
         tiles = painted[key]["tiles"]
         if tiles > 64:
             raise SystemExit(f"{key} has {tiles} background tiles")
