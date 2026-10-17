@@ -1939,7 +1939,7 @@ HURT_LOCK = "5"
 HURT_GRACE_FRAMES = 60
 
 
-def hurt_steps(suffix: str, segment: dict) -> list:
+def hurt_steps(suffix: str, segment: dict, held: bool = False) -> list:
     # Variable 5 is a hurt lock shared by every hazard: 0 = can be hurt,
     # 1 = a hit is being handled (about a second of grace). It replaces the
     # old EVENT_RATE_LIMIT on variable 5. GBVM's vm_rate_limit_const stores a
@@ -1958,7 +1958,8 @@ def hurt_steps(suffix: str, segment: dict) -> list:
             f"{suffix}-hurt-ready",
             HURT_LOCK,
             "==",
-            0,
+            # held: the caller (enemy_script) already took the lock 0 -> 1.
+            1 if held else 0,
             [set_number(f"{suffix}-hurt-lock", HURT_LOCK, 1)]
             + [if_value(f"{suffix}-if-powered", POWER_VAR, "==", 1, lose_power(suffix, segment), [
                 event(f"{suffix}-hit-inc", "EVENT_INC_VALUE", {"variable": "4"}),
@@ -2016,33 +2017,69 @@ def hurt_steps(suffix: str, segment: dict) -> list:
 
 
 def enemy_script(suffix: str, segment: dict) -> list:
-    hurt = hurt_steps(suffix, segment)
-    # Falling uses a positive Y velocity. A landing often overlaps the blob,
-    # so "player is above" alone misses the stomp.
-    falling = event(
-        f"{suffix}-if-falling",
-        "EVENT_IF",
-        {
-            "condition": {
-                "type": "gt",
-                "valueA": {"type": "engineField", "value": "plat_vel_y"},
-                "valueB": {"type": "number", "value": 0},
-            },
-            "__collapseElse": False,
-        },
-        {"true": vanish_blob(suffix + "-fall", True), "false": hurt},
-    )
-    return [
-        event(
-            f"{suffix}-hit-if",
-            "EVENT_IF_ACTOR_RELATIVE_TO_ACTOR",
+    """Blob / Zap Bat contact: stomp (from above or falling) or get hurt.
+
+    The hurt lock is checked and taken (0 -> 1) as the very first steps,
+    before the relative-position and velocity tests. GBVM preempts a thread
+    after a 17-instruction quantum (vm.h INSTRUCTIONS_PER_QUANT 0x10, post-
+    decrement); a fresh hit thread starts with a full quantum, so a check and
+    set within the first few instructions cannot interleave with another hit
+    thread. Keep any new events after the lock, not ahead of it. With the
+    lock busy, a stomp still works but a side touch does nothing.
+    """
+
+    def body(tag: str, held: bool) -> list:
+        stomp_above = vanish_blob(tag + "-above", True)
+        stomp_fall = vanish_blob(tag + "-fall", True)
+        if held:
+            release = [if_value(f"{tag}-stomp-unlock", HURT_LOCK, "==", 1, [set_number(f"{tag}-stomp-release", HURT_LOCK, 0)])]
+            stomp_above = stomp_above + release
+            stomp_fall = stomp_fall + [
+                if_value(f"{tag}-stomp-unlock2", HURT_LOCK, "==", 1, [set_number(f"{tag}-stomp-release2", HURT_LOCK, 0)])
+            ]
+        hurt = hurt_steps(tag, segment, held=True) if held else []
+        # Falling uses a positive Y velocity. A landing often overlaps the
+        # blob, so "player is above" alone misses the stomp.
+        falling = event(
+            f"{tag}-if-falling",
+            "EVENT_IF",
             {
-                "actorId": "player",
-                "operation": "up",
-                "otherActorId": "$self$",
+                "condition": {
+                    "type": "gt",
+                    "valueA": {"type": "engineField", "value": "plat_vel_y"},
+                    "valueB": {"type": "number", "value": 0},
+                },
                 "__collapseElse": False,
             },
-            {"true": vanish_blob(suffix + "-above", True), "false": [falling]},
+            {"true": stomp_fall, "false": hurt},
+        )
+        return [
+            event(
+                f"{tag}-hit-if",
+                "EVENT_IF_ACTOR_RELATIVE_TO_ACTOR",
+                {
+                    "actorId": "player",
+                    "operation": "up",
+                    "otherActorId": "$self$",
+                    "__collapseElse": False,
+                },
+                {"true": stomp_above, "false": [falling]},
+            )
+        ]
+
+    return [
+        unless_done(
+            f"{suffix}-contact-done-check",
+            [
+                if_value(
+                    f"{suffix}-contact-lock",
+                    HURT_LOCK,
+                    "==",
+                    0,
+                    [set_number(f"{suffix}-contact-take", HURT_LOCK, 1), *body(suffix, True)],
+                    body(f"{suffix}-busy", False),
+                )
+            ],
         )
     ]
 
