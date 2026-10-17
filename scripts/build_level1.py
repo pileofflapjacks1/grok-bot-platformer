@@ -131,10 +131,12 @@ SEGMENTS = [
         "pits": [(62, 64)],
         "blobs": [(10, 13), (23, 10), (36, 13), (81, 10)],
         "chips": [(48, 11), (140, 11)],
-        "electrons": [(52, 8), (58, 10), (78, 7), (146, 8)],
+        "electrons": [(52, 8), (78, 7), (146, 8)],
         "flyers": [(70, 9), (128, 8)],
         # One shooter on the high ledge; it fires a bolt at Grok Bot every 2 s.
-        "turret": [(116, 9)],
+        # Bolt Towers, spaced so no 20-tile screen ever holds two (one bolt
+        # in flight per screen keeps every row at 10 sprites or fewer).
+        "turret": [(60, 13), (116, 9), (143, 11)],
         # Level-complete car, 4 tiles wide, parked on the floor before the end.
         "roadster": [(SEG_W - 12, FLOOR_TOP - 2)],
         "next": None,
@@ -1578,14 +1580,40 @@ def launch_bolt(name: str) -> dict:
     )
 
 
+TOWER_RANGE = 9  # tiles: about half a screen, so the tower is inside the camera frame
+
+
 def turret_update(suffix: str) -> list:
-    # Update scripts only run while the actor is on or near the screen, so it
-    # only fires once Grok Bot is close.
+    # GB Studio only runs update scripts for active actors (on screen plus a
+    # small margin). On top of that the tower only fires when Grok Bot is
+    # within TOWER_RANGE tiles, i.e. the tower is inside the camera frame
+    # (the camera follows the player), so it never shoots from off screen.
     return [
         wait_frames(f"{suffix}-reload", 120),
-        beep(f"{suffix}-fire-sound", 4),
-        launch_bolt(f"{suffix}-fire"),
+        event(
+            f"{suffix}-in-frame",
+            "EVENT_IF_ACTOR_DISTANCE_FROM_ACTOR",
+            {
+                "actorId": "player",
+                "operator": "<=",
+                "distance": {"type": "number", "value": TOWER_RANGE},
+                "otherActorId": "$self$",
+                "__collapseElse": True,
+            },
+            {
+                "true": [
+                    beep(f"{suffix}-fire-sound", 4),
+                    launch_bolt(f"{suffix}-fire"),
+                ],
+                "false": [],
+            },
+        ),
     ]
+
+
+def tower_script(suffix: str, segment: dict) -> list:
+    """Touching a tower always hurts; stomping does nothing. Only shots kill it."""
+    return hurt_steps(suffix, segment)
 
 
 def vanish_blob(suffix: str, bounce: bool) -> list:
@@ -2238,7 +2266,7 @@ def write_segment(
                 y=y,
                 sprite_symbol="sprite_turret",
                 palette_name="Chip Gray",
-                script=enemy_script(suffix, segment),
+                script=tower_script(suffix, segment),
                 update_script=turret_update(suffix),
                 hit1_script=shot_blob(suffix),
             ),
