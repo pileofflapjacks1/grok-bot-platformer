@@ -1904,11 +1904,12 @@ def no_fire(name: str) -> dict:
 SHOT_GAP = 0.6
 SHOT_LIFE = 0.55
 MAX_SHOTS = 1
-# Under the 2 s reload, so one bolt per tower. Also short enough that the
-# walk between High Ridge's towers at 110 and 143 (15 tiles out of range,
-# about 1.3 s) outlasts a bolt, so two bolts are never on screen together.
-# 1.2 s at speed 2 still covers well over TOWER_RANGE.
-BOLT_LIFE = 1.2
+# Under the 2 s reload, so one bolt per tower. Short enough that even at run
+# speed the 15 out-of-range tiles between towers 110 and 143 (0.78 s)
+# outlast a bolt, so two bolts are never on screen together. 0.7 s = 42
+# frames at 2 px/frame is about 11.3 tiles of worst-case diagonal reach,
+# still past the ~10.3-tile truncated fire distance.
+BOLT_LIFE = 0.7
 
 
 def attach_fire(segment: dict, prefix: str | None = None) -> dict:
@@ -3366,8 +3367,9 @@ HW_SPRITES = {"roadster": 4}
 PATROL = {"blobs": 3, "flyers": 4}
 
 
-# Walk speed VEL_TO_SUBPX(6400) = 50 subpx/frame, about 11.7 tiles/s.
-WALK_TILES_PER_S = 11.7
+# Fastest the player moves: holding B to run, plat_run_vel 10496 = 82
+# subpx/frame, about 19.2 tiles/s (gbvm platform.c:989; walking is 11.7).
+MAX_RUN_TILES_PER_S = 19.2
 
 
 def towers_can_chain(a: int, b: int) -> bool:
@@ -3378,7 +3380,7 @@ def towers_can_chain(a: int, b: int) -> bool:
     be in flight at once.
     """
     gap = abs(b - a) - 2 * TOWER_RANGE
-    return gap / WALK_TILES_PER_S < BOLT_LIFE
+    return gap / MAX_RUN_TILES_PER_S < BOLT_LIFE
 
 
 def tower_chains(segment: dict, x: int) -> bool:
