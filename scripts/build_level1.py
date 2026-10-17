@@ -76,10 +76,7 @@ MAX_ACTORS = 20
 SCENE_GAP = 80
 LIVES_AT = (1, 0)
 AMMO_AT = (16, 0)
-COINS_AT = (8, 0)
-COIN_VAR = "8"
 POWER_VAR = "9"
-GOLD = (248, 176, 40, 255)  # mid band: the gold slot of Coin Gold
 VIOLET = (152, 160, 224, 255)  # mid band: the body slot of Flyer Violet
 # Screen bands. Speeds are GB Studio parallax values: 0 is normal, 2 is 1/4, 4 is 1/16.
 # Solids stay at row 10 and below so the floor scrolls with the player.
@@ -96,11 +93,11 @@ def world_x(index: int) -> int:
 
 
 # A 16px actor standing on a surface uses y = top - 2.
-# Electrons and coins sit in the air so each one is its own hop.
+# Electrons sit in the air so each one is its own hop.
 # Per scene GB Studio keeps at most 20 actors (MAX_ACTORS in src/consts.ts;
 # extras are dropped at build time) and 30 triggers. The 3 pinned HUD
 # actors count, so each half is laid out to exactly fit. Order along each
-# half: coins and blobs first, then the silicon chip, then electrons.
+# half: blobs first, then the silicon chip, then electrons.
 SEGMENTS = [
     {
         "key": "hills",
@@ -115,7 +112,6 @@ SEGMENTS = [
         "raised": [(20, 32, 12), (48, 58, 13), (90, 108, 12), (124, 140, 11), (150, 162, 13)],
         "pits": [(70, 72)],
         "blobs": [(12, 13), (26, 10), (40, 13), (99, 10)],
-        "coins": [(8, 11), (17, 10), (24, 7), (34, 10)],
         "chips": [(54, 11), (118, 13)],
         "electrons": [(60, 10), (88, 8), (94, 7), (104, 6), (146, 8)],
         "flyers": [(80, 9), (132, 7)],
@@ -134,7 +130,6 @@ SEGMENTS = [
         "raised": [(16, 30, 12), (42, 54, 13), (74, 88, 12), (108, 122, 11), (136, 150, 13)],
         "pits": [(62, 64)],
         "blobs": [(10, 13), (23, 10), (36, 13), (81, 10)],
-        "coins": [(6, 11), (14, 10), (27, 7)],
         "chips": [(48, 11), (140, 11)],
         "electrons": [(52, 8), (58, 10), (78, 7), (146, 8)],
         "flyers": [(70, 9), (128, 8)],
@@ -145,13 +140,13 @@ SEGMENTS = [
         "next": None,
     },
 ]
-HUD_ACTORS = 3
+HUD_ACTORS = 2
 
 
 def segment_bodies(segment: dict) -> list[tuple[str, int, int]]:
     """Every non-HUD actor in a half as (kind, x, y)."""
     bodies = []
-    for kind in ("blobs", "coins", "chips", "electrons", "flyers", "turret", "roadster"):
+    for kind in ("blobs", "chips", "electrons", "flyers", "turret", "roadster"):
         bodies.extend((kind, x, y) for x, y in segment.get(kind, []))
     return bodies
 
@@ -609,25 +604,6 @@ def paint_electron() -> list[list[tuple[int, int, int, int]]]:
     return image
 
 
-def paint_coin() -> list[list[tuple[int, int, int, int]]]:
-    """A round gold coin: dark rim, gold face, light shine and a raised bar."""
-    image = blank(16, 16, CLEAR)
-    for y in range(16):
-        for x in range(16):
-            dx = x + 0.5 - 8
-            dy = y + 0.5 - 8
-            dist = dx * dx + dy * dy
-            if dist <= 3.6 * 3.6:
-                image[y][x] = GOLD
-            elif dist <= 4.8 * 4.8:
-                image[y][x] = BLACK
-    for x, y in ((6, 5), (5, 6), (5, 7)):
-        image[y][x] = WHITE
-    for y in range(6, 10):
-        image[y][8] = BLACK
-    return image
-
-
 def paint_flyer() -> list[list[tuple[int, int, int, int]]]:
     """Zap Bat: a small round bot with a visor and two flapping wings.
 
@@ -757,29 +733,6 @@ def paint_roadster() -> list[list[tuple[int, int, int, int]]]:
                     image[y][x] = BLACK
         image[13][cx - 1] = CREAM
         image[13][cx] = CREAM
-    return image
-
-
-def coin_total() -> int:
-    return sum(len(segment["coins"]) for segment in SEGMENTS)
-
-
-def paint_coin_hud() -> list[list[tuple[int, int, int, int]]]:
-    """One frame per coin count: a dark badge, a small coin, one digit."""
-    count = coin_total() + 1
-    image = blank(count * 16, 16, BLACK)
-    for value in range(count):
-        origin = value * 16
-        for y in range(5, 11):
-            for x in range(1, 7):
-                if (x - 3.5) ** 2 + (y - 7.5) ** 2 <= 7.5:
-                    image[y][origin + x] = GOLD
-        image[6][origin + 3] = WHITE
-        if value < 10:
-            draw_digit(image, origin + 8, 3, value, WHITE, 2)
-        else:
-            draw_digit(image, origin + 8, 5, value // 10, WHITE)
-            draw_digit(image, origin + 12, 5, value % 10, WHITE)
     return image
 
 
@@ -1126,7 +1079,7 @@ def tile_ref(name: str, x: int, slice_x: int, palette_index: int = 0) -> dict:
 # Scene sprite palette slots. In color mode GB Studio 4 reads the palette
 # from each sprite tile's paletteIndex (compileSprites.ts makeProps), not from
 # the actor's paletteId. Slot 0 is Grok Bot; the picker color swaps slot 0.
-SLOT = {"enemy": 1, "lives": 1, "electron": 2, "ammo": 2, "chip": 3, "coin": 4, "coinhud": 4, "flyer": 5, "turret": 3, "bolt": 1, "roadster": 1}
+SLOT = {"enemy": 1, "lives": 1, "electron": 2, "ammo": 2, "chip": 3, "flyer": 5, "turret": 3, "bolt": 1, "roadster": 1}
 
 
 def frame_of(name: str, slice_x: int) -> dict:
@@ -1771,15 +1724,6 @@ def set_engine(name: str, key: str, number: int) -> dict:
     )
 
 
-def coin_script(name: str, hud_symbol: str) -> list:
-    return [
-        event(f"{name}-inc", "EVENT_INC_VALUE", {"variable": COIN_VAR}),
-        show_counter(f"{name}-hud", hud_symbol, COIN_VAR),
-        beep(f"{name}-sound", 9),
-        deactivate(f"{name}-hide"),
-    ]
-
-
 def electron_script(name: str, ammo_symbol: str) -> list:
     return [
         event(f"{name}-inc", "EVENT_INC_VALUE", {"variable": "0"}),
@@ -2034,7 +1978,6 @@ def segment_init(segment: dict) -> list:
         script.extend(
             [
                 set_number(f"{key}-electrons", "0", 0),
-                set_number(f"{key}-coins", COIN_VAR, 0),
                 set_number(f"{key}-power", POWER_VAR, 0),
                 set_number(f"{key}-lives", "1", 3),
                 set_number(f"{key}-chip", "2", 0),
@@ -2048,7 +1991,6 @@ def segment_init(segment: dict) -> list:
     script.extend(apply_player_choice(key))
     script.append(show_lives(f"{key}-hearts", lives_symbol))
     script.append(show_ammo(f"{key}-ammo", ammo_symbol))
-    script.append(show_counter(f"{key}-coins-hud", f"actor_coins_{key}", COIN_VAR))
     script.append(attach_fire(segment))
     return script
 
@@ -2107,12 +2049,10 @@ def build_images() -> dict:
     write_png(sprites / "enemy_red_blob.png", 32, 16, paint_enemy())
     write_png(sprites / "electron.png", 16, 16, paint_electron())
     write_png(sprites / "silicon_chip.png", 16, 16, paint_chip())
-    write_png(sprites / "coin.png", 16, 16, paint_coin())
     write_png(sprites / "flyer.png", 32, 16, paint_flyer())
     write_png(sprites / "turret.png", 16, 16, paint_turret())
     write_png(sprites / "roadster.png", 32, 16, paint_roadster())
     write_png(sprites / "bolt.png", 16, 16, paint_bolt())
-    write_png(sprites / "coin_hud.png", (coin_total() + 1) * 16, 16, paint_coin_hud())
     write_png(sprites / "lives.png", 64, 16, paint_lives())
     write_png(sprites / "ammo.png", ammo_frames * 16, 16, paint_ammo())
     for stale in (
@@ -2122,6 +2062,10 @@ def build_images() -> dict:
         "collectible_star.png.gbsres",
         "press_start.png",
         "press_start.png.gbsres",
+        "coin.png",
+        "coin.png.gbsres",
+        "coin_hud.png",
+        "coin_hud.png.gbsres",
     ):
         path = sprites / stale
         if path.exists():
@@ -2227,40 +2171,6 @@ def write_segment(
         ),
     )
     next_index += 1
-    write_json(
-        actor_dir / "coins_hud.gbsres",
-        actor(
-            name="Coins",
-            symbol=f"actor_coins_{key}",
-            index=next_index,
-            x=COINS_AT[0],
-            y=COINS_AT[1],
-            sprite_symbol="sprite_coin_hud",
-            palette_name="Coin Gold",
-            script=[],
-            animate=False,
-            pinned=True,
-            collision_group="",
-        ),
-    )
-    next_index += 1
-    for index, (x, y) in enumerate(segment["coins"], start=1):
-        suffix = f"{key}-coin{index}"
-        write_json(
-            actor_dir / f"coin_{index}.gbsres",
-            actor(
-                name=f"Coin {index}",
-                symbol=f"actor_{suffix}",
-                index=next_index,
-                x=x,
-                y=y,
-                sprite_symbol="sprite_coin",
-                palette_name="Coin Gold",
-                script=coin_script(suffix, f"actor_coins_{key}"),
-                collision_group="2",
-            ),
-        )
-        next_index += 1
     for index, (x, y) in enumerate(segment["blobs"], start=1):
         suffix = f"{key}-blob{index}"
         write_json(
@@ -2464,20 +2374,6 @@ def build_resources(collisions: dict) -> None:
         ),
     )
     write_json(
-        sprites / "coin.png.gbsres",
-        sprite_resource(
-            name="coin",
-            symbol="sprite_coin",
-            filename="coin.png",
-            image_path=sprites / "coin.png",
-            width=16,
-            height=16,
-            animation_type="fixed",
-            animations=fixed_animation("coin"),
-            num_tiles=2,
-        ),
-    )
-    write_json(
         sprites / "roadster.png.gbsres",
         sprite_resource(
             name="roadster",
@@ -2521,20 +2417,6 @@ def build_resources(collisions: dict) -> None:
             animation_type="fixed",
             animations=frames_animation("flyer", 2),
             num_tiles=4,
-        ),
-    )
-    write_json(
-        sprites / "coin_hud.png.gbsres",
-        sprite_resource(
-            name="coin_hud",
-            symbol="sprite_coin_hud",
-            filename="coin_hud.png",
-            image_path=sprites / "coin_hud.png",
-            width=(coin_total() + 1) * 16,
-            height=16,
-            animation_type="fixed",
-            animations=frames_animation("coinhud", coin_total() + 1),
-            num_tiles=(coin_total() + 1) * 2,
         ),
     )
     write_json(
@@ -2673,10 +2555,6 @@ def build_resources(collisions: dict) -> None:
         palette("Chip Gray", sprite_palette("D8DCE8", "606878", "181018")),
     )
     write_json(
-        palettes / "coin_gold.gbsres",
-        palette("Coin Gold", sprite_palette("F8F0B0", "F0B020", "704010")),
-    )
-    write_json(
         palettes / "flyer_violet.gbsres",
         palette("Flyer Violet", sprite_palette("F0E8FF", "9868E0", "281848")),
     )
@@ -2689,7 +2567,7 @@ def build_resources(collisions: dict) -> None:
             palettes / f"{name.lower().replace(' ', '_')}.gbsres",
             palette(name, ["B8F0E8", color, "70C0D8", "183028"]),
         )
-    for stale in ("grok_pink.gbsres", "star_yellow.gbsres"):
+    for stale in ("grok_pink.gbsres", "star_yellow.gbsres", "coin_gold.gbsres"):
         path = palettes / stale
         if path.exists():
             path.unlink()
@@ -2709,7 +2587,7 @@ def build_resources(collisions: dict) -> None:
         uid("palette-Blob Red"),
         uid("palette-Electron Blue"),
         uid("palette-Chip Gray"),
-        uid("palette-Coin Gold"),
+        "default-sprite",
         uid("palette-Flyer Violet"),
         "default-sprite",
         "default-sprite",
@@ -3171,7 +3049,7 @@ def patch_project() -> None:
         uid("palette-Blob Red"),
         uid("palette-Electron Blue"),
         uid("palette-Chip Gray"),
-        uid("palette-Coin Gold"),
+        "default-sprite",
         uid("palette-Flyer Violet"),
         "default-sprite",
         "default-sprite",
@@ -3222,12 +3100,6 @@ def patch_project() -> None:
                     "id": "5",
                     "name": "hurt_lock",
                     "symbol": "var_hurt_lock",
-                    "type": "number",
-                },
-                {
-                    "id": COIN_VAR,
-                    "name": "coins",
-                    "symbol": "var_coins",
                     "type": "number",
                 },
                 {
@@ -3297,8 +3169,6 @@ GB Studio reads every `.png` in this folder. The Level 1 sheets below are 16x16,
 | silicon_chip.png | One power-up. Collecting it unlocks firing for the rest of the run. |
 | lives.png | Four frames. Each frame is a black badge with a heart and a digit, 0 through 3. The pinned actor shows the frame that matches `lives`. |
 | ammo.png | One frame per electron count, from 0 up. Each frame is a blue badge with two digits. The pinned actor shows the frame that matches `electrons`. |
-| coin.png | Round gold coin pickup (Coin Gold palette). |
-| coin_hud.png | One frame per coin count: a small coin and a digit. The pinned actor shows the frame that matches `coins` (variable 8). |
 | flyer.png | Zap Bat, a small winged bot. Two frames, wings up and down. |
 | turret.png | Bolt Tower, the High Ridge shooter. |
 | bolt.png | The Bolt Tower's projectile. |
@@ -3333,7 +3203,7 @@ def scanline_peak(segment: dict) -> int:
     draws at most 10 sprites per scanline.
     """
     worst = 0
-    hud = [(LIVES_AT[0], LIVES_AT[1]), (AMMO_AT[0], AMMO_AT[1]), (COINS_AT[0], COINS_AT[1])]
+    hud = [(LIVES_AT[0], LIVES_AT[1]), (AMMO_AT[0], AMMO_AT[1])]
     for left in range(0, SEG_W - 19):
         rows = [0] * (LEVEL_H + 2)
         for _x, y in hud:
@@ -3398,7 +3268,7 @@ def validate_layout() -> None:
                 raise SystemExit(f"{label} blob at {(x, y)} is not standing on a ledge")
             if x - 3 < 0 or solid_top(segment, x - 3) != y + 2 or solid_top(segment, x + 3) != y + 2:
                 raise SystemExit(f"{label} blob at {(x, y)} patrols off its ledge")
-        for kind in ("electrons", "coins"):
+        for kind in ("electrons",):
             for x, y in segment[kind]:
                 ground = solid_top(segment, x)
                 if ground is None:
@@ -3418,11 +3288,9 @@ def validate_layout() -> None:
         for electron_x, _electron_y in segment["electrons"]:
             if electron_x <= first_chip:
                 raise SystemExit(f"{label} electron at x={electron_x} is not after the chip")
-        # Joe's order: meet blobs and coins before the chip.
+        # Joe's order: meet blobs before the chip.
         if len([x for x, _y in segment["blobs"] if x < first_chip]) < 2:
             raise SystemExit(f"{label} needs at least two blobs before the chip")
-        if len([x for x, _y in segment["coins"] if x < first_chip]) < 3:
-            raise SystemExit(f"{label} needs at least three coins before the chip")
         if solid_top(segment, PLAYER_START[0]) != PLAYER_START[1] + 2:
             raise SystemExit(f"{label} start is not on the floor")
         gate_x = SEG_W - 4
@@ -3432,15 +3300,15 @@ def validate_layout() -> None:
             for _other_kind, other_x, other_y in bodies[index + 1 :]:
                 if abs(x - other_x) < 2 and abs(y - other_y) < 2:
                     raise SystemExit(f"{label} actors overlap at {(x, y)} and {(other_x, other_y)}")
-    if electron_total() < 8 or coin_total() < 6:
-        raise SystemExit(f"expected a longer cast, got {electron_total()} electrons and {coin_total()} coins")
+    if electron_total() < 7:
+        raise SystemExit(f"expected a longer cast, got {electron_total()} electrons")
 
 
-LAYOUT_MARKS = {"blobs": "B", "coins": "o", "chips": "C", "electrons": "e", "flyers": "F", "turret": "T", "roadster": "R"}
+LAYOUT_MARKS = {"blobs": "B", "chips": "C", "electrons": "e", "flyers": "F", "turret": "T", "roadster": "R"}
 
 
 def layout_rows(segment: dict) -> list[str]:
-    marks = {PLAYER_START: "P", LIVES_AT: "H", AMMO_AT: "A", COINS_AT: "$"}
+    marks = {PLAYER_START: "P", LIVES_AT: "H", AMMO_AT: "A"}
     for kind, x, y in segment_bodies(segment):
         marks[(x, y)] = LAYOUT_MARKS[kind]
     for dx in range(4):
@@ -3494,7 +3362,6 @@ def main() -> None:
         print(f"{key.title()}: {tiles} background tiles")
     print("Electrons:", sum(len(segment["electrons"]) for segment in SEGMENTS))
     print("Blobs:", sum(len(segment["blobs"]) for segment in SEGMENTS))
-    print("Coins:", coin_total())
     print("Wrote", ROOT / "GrokBotPlatformer.gbsproj")
 
 

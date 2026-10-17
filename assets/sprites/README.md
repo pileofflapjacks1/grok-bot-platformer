@@ -17,8 +17,6 @@ GB Studio reads every `.png` in this folder. The Level 1 sheets below are 16x16,
 | silicon_chip.png | One power-up. Collecting it unlocks firing for the rest of the run. |
 | lives.png | Four frames. Each frame is a black badge with a heart and a digit, 0 through 3. The pinned actor shows the frame that matches `lives`. |
 | ammo.png | One frame per electron count, from 0 up. Each frame is a blue badge with two digits. The pinned actor shows the frame that matches `electrons`. |
-| coin.png | Round gold coin pickup (Coin Gold palette). |
-| coin_hud.png | One frame per coin count: a small coin and a digit. The pinned actor shows the frame that matches `coins` (variable 8). |
 | flyer.png | Zap Bat, a small winged bot. Two frames, wings up and down. |
 | turret.png | Bolt Tower, the High Ridge shooter. |
 | bolt.png | The Bolt Tower's projectile. |
