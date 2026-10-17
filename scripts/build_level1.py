@@ -144,7 +144,7 @@ SEGMENTS = [
         # One shooter on the high ledge; it fires a bolt at Grok Bot every 2 s.
         # Bolt Towers, spaced so no 20-tile screen ever holds two (one bolt
         # in flight per screen keeps every row at 10 sprites or fewer).
-        "turret": [(60, 13), (116, 9), (143, 11)],
+        "turret": [(60, 13), (110, 9), (143, 11)],
         # Level-complete car, 4 tiles wide, parked on the floor before the end.
         "roadster": [(SEG_W - 12, FLOOR_TOP - 2)],
         "next": None,
@@ -1899,7 +1899,11 @@ def no_fire(name: str) -> dict:
 SHOT_GAP = 0.6
 SHOT_LIFE = 0.55
 MAX_SHOTS = 1
-BOLT_LIFE = 1.8  # under the 2 s reload, so one bolt at a time
+# Under the 2 s reload, so one bolt per tower. Also short enough that the
+# walk between High Ridge's towers at 110 and 143 (15 tiles out of range,
+# about 1.3 s) outlasts a bolt, so two bolts are never on screen together.
+# 1.2 s at speed 2 still covers well over TOWER_RANGE.
+BOLT_LIFE = 1.2
 
 
 def attach_fire(segment: dict, prefix: str | None = None) -> dict:
@@ -3349,6 +3353,25 @@ HW_SPRITES = {"roadster": 4}
 PATROL = {"blobs": 3, "flyers": 4}
 
 
+# Walk speed VEL_TO_SUBPX(6400) = 50 subpx/frame, about 11.7 tiles/s.
+WALK_TILES_PER_S = 11.7
+
+
+def towers_can_chain(a: int, b: int) -> bool:
+    """True if a bolt from tower a can still be alive when tower b fires.
+
+    The player must walk from leaving a's range (a + TOWER_RANGE) to entering
+    b's (b - TOWER_RANGE); if that takes less than BOLT_LIFE, both bolts can
+    be in flight at once.
+    """
+    gap = abs(b - a) - 2 * TOWER_RANGE
+    return gap / WALK_TILES_PER_S < BOLT_LIFE
+
+
+def tower_chains(segment: dict, x: int) -> bool:
+    return any(other != x and towers_can_chain(x, other) for other, _y in segment.get("turret", []))
+
+
 def scanline_peak(segment: dict) -> int:
     """Worst count of hardware sprites sharing one 8 px row on any screen.
 
@@ -3374,7 +3397,10 @@ def scanline_peak(segment: dict) -> int:
             if x1 + reach <= left or x0 - reach >= left + 20:
                 continue
             if kind == "turret":
-                bolts = 2
+                # A bolt from a tower that can chain with another tower in
+                # view (see towers_can_chain) may still be alive when the next
+                # tower fires, so two bolts can share the screen.
+                bolts = max(bolts, 4 if tower_chains(segment, x) else 2)
             # Flyers bob one row up from their placed row.
             top = y - 1 if kind == "flyers" else y
             for row in range(top, y + 2):
