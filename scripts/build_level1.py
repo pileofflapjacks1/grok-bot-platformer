@@ -1648,7 +1648,7 @@ def turret_update(suffix: str) -> list:
 
 
 def tower_script(suffix: str, segment: dict) -> list:
-    """Touching a tower always hurts; stomping does nothing. Only shots kill it."""
+    """Touching a tower always hurts; a stomp counts as a touch and hurts too. Only electron shots kill it."""
     return hurt_steps(suffix, segment)
 
 
@@ -1763,8 +1763,10 @@ def hurt_steps(suffix: str, segment: dict) -> list:
     # whenever the 16-bit sys_time was 32768-65535 (from about 9 minutes after
     # power-on, for about 9 minutes of every 18) every hurt was skipped:
     # Grok Bot walked through blobs, bats, towers and bolts. Each scene init
-    # and each pit respawn resets the lock, so a script cut short by a scene
-    # switch cannot leave it stuck.
+    # resets the lock, so a script cut short by a scene switch cannot leave it
+    # stuck. Values: 0 free, 1 this kind of hit script, HURT_HOLD (2) a pit
+    # fall or the roadster; a hit only releases 1, the pit releases its own 2
+    # after the respawn grace.
     lives_symbol = f"actor_lives_{segment['key']}"
     return [
         if_value(
@@ -2077,8 +2079,8 @@ def pit_script(name: str, segment: dict) -> list:
         # tower sits next to the High Ridge pit) still reaches the player in
         # blank state (projectiles.c tests PLAYER directly), and its hurt
         # script would set knockback mid-fall and could take a second life.
-        # the alive path releases it after the respawn grace; Game Over reloads the scene, whose init
-        # clears it.
+        # The alive path releases it after the respawn grace; Game Over
+        # reloads the scene, whose init clears it.
         set_number(f"{name}-hurt-hold", HURT_LOCK, HURT_HOLD),
         no_fire(f"{name}-nofire"),
         set_engine(f"{name}-stop-vx", "plat_vel_x", 0),
@@ -3430,6 +3432,11 @@ def scanline_peak(segment: dict) -> int:
 
 
 def validate_layout() -> None:
+    # Projectile life_time is a uint8_t frame count (gbs_types.h); the
+    # generator bypasses the editor's 4 s cap, so guard against wrapping.
+    for label, seconds in (("BOLT_LIFE", BOLT_LIFE), ("SHOT_LIFE", SHOT_LIFE)):
+        if round(seconds * 60) > 255:
+            raise SystemExit(f"{label} {seconds}s is {round(seconds * 60)} frames; life_time is uint8 (max 255)")
     for segment in SEGMENTS:
         label = segment["name"]
         bodies = segment_bodies(segment)
