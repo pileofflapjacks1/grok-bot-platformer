@@ -47,11 +47,19 @@ Level 1 sheets are in `assets/sprites/`:
 - `silicon_chip.png`
 - `lives.png`
 - `ammo.png`
+- `coin.png`, `coin_hud.png` (gold coin pickup; HUD badge with one frame per coin count)
+- `flyer.png` (Zap Bat, 2 wing frames), `turret.png` (Bolt Tower), `bolt.png` (its projectile)
+- `roadster.png` (32x16 level-complete car)
 
 - `player_grok_square.png`, `player_heart.png`, `player_star.png`, `player_triangle.png`, `player_teardrop.png`, `player_oval.png`, `player_blob.png` (picker shapes; indexed PNGs recolored by sprite palette slot 0; contact sheet in `docs/shapes-sheet.png`)
 - `press_start_0.png` .. `press_start_3.png` (title text, one single-frame sheet per strip)
 
 Eight shapes and four colors are in the picker; see `docs/CHARACTER_SELECTION.md`.
+
+### Budgets (per Level 1 scene)
+- Actors: 20 / 20 in each half (GB Studio's `MAX_ACTORS`; the 3 pinned HUD badges count). Triggers: 2 / 30. GB Studio only runs actors near the screen, and the generator checks that no screen-wide window can put more than 8 of the 10 per-scanline hardware sprites on one row (player included).
+- Sprite palettes: 6 / 8 slots (Grok Bot, Blob Red, Electron Blue, Chip Gray, Coin Gold, Flyer Violet). The power-up glow and the picker colors swap slot 0 instead of using new slots.
+- Sprite VRAM (8x16 tiles, before GB Studio removes duplicates): Green Hills 66, High Ridge 74, i.e. 132 / 148 8x8 tiles, including one 8-tile player slot. Color-only mode splits sprite tiles across both VRAM banks.
 
 ## Next Steps
 1. Pull this project on the test computer, open it in GB Studio, and record a normal-speed clear.

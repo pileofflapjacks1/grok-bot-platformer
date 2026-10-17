@@ -52,7 +52,7 @@ Each press updates the preview actor (`Actor: Set Sprite` for the shape, `Palett
 Each Level 1 scene's init runs `If player_shape == N → Player: Set Sprite` for N = 1..7 (0 keeps the default circle), then sets sprite palette slot 0 from `player_color`.
 
 ## Budgets
-- Sprite palettes: no new palettes. Color is a swap of slot 0 between Grok Bot, Grok Red, Grok Yellow, and Grok Teal; 4 of the 8 GBC sprite palette slots are used.
+- Sprite palettes: color is a swap of slot 0 between Grok Bot, Grok Red, Grok Yellow, and Grok Teal (and their "Power" twins with a glowing outline after a silicon chip). Level scenes use 6 of the 8 GBC sprite palette slots.
 - Tiles: 8 sheets x 8 tiles = 64 8x16 tiles (128 8x8 tiles) in ROM. VRAM is not 64 tiles: for an actor whose sprite is changed by script, GB Studio reserves one slot the size of the largest sheet it can take (`actorsExclusiveLookup` in `src/lib/compiler/compileData.ts`), and `Set Sprite` loads the chosen sheet into it. So the player and the picker preview each hold one sheet (8 tiles) at a time.
 
 ## Colors
