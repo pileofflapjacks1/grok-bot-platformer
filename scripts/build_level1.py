@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Level 1 of GrokBotPlatformer on top of the GB Studio blank template.
+"""Generate Level 1 of GROK BOT HERO (project file GrokBotPlatformer.gbsproj) on top of the GB Studio blank template.
 
 Run from anywhere:
 
@@ -2139,6 +2139,7 @@ GLYPHS = {
     "A": ("01110", "10001", "10001", "11111", "10001", "10001", "10001"),
     "B": ("11110", "10001", "10001", "11110", "10001", "10001", "11110"),
     "E": ("11111", "10000", "10000", "11110", "10000", "10000", "11111"),
+    "H": ("10001", "10001", "10001", "11111", "10001", "10001", "10001"),
     "G": ("01110", "10001", "10000", "10111", "10001", "10001", "01111"),
     "K": ("10001", "10010", "10100", "11000", "10100", "10010", "10001"),
     "O": ("01110", "10001", "10001", "10001", "10001", "10001", "01110"),
@@ -2182,9 +2183,27 @@ def paint_menu_base():
     return image, [0] * len(collisions), colors
 
 
+GAME_TITLE = "GROK BOT HERO"
+
+
 def paint_title():
+    """Logo: GROK BOT on rows 3-4, HERO on rows 6-7, each 2x scale.
+
+    Tiles under the logo are reset to plain sky on background palette 0 so
+    the letters do not pick up the far-hills palette.
+    """
     image, collisions, colors = paint_menu_base()
-    draw_text(image, 2 * 8, 4 * 8, "GROK BOT", OUTLINE, 2)
+    lines = [("GROK BOT", 2, 3), ("HERO", 6, 6)]
+    for text, tile_x, tile_y in lines:
+        # HERO sits on the hill band (rows 6-8); clear the whole band there.
+        rows = range(tile_y, 9) if tile_y == 6 else range(tile_y, tile_y + 2)
+        for ty in rows:
+            for tx in range(tile_x, tile_x + len(text) * 2):
+                colors[ty * CLEAR_W + tx] = 0
+                for y in range(8):
+                    for x in range(8):
+                        image[ty * 8 + y][tx * 8 + x] = SKY
+        draw_text(image, tile_x * 8, tile_y * 8 + 1, text, OUTLINE, 2)
     return image, collisions, colors
 
 
@@ -2445,7 +2464,7 @@ def patch_project() -> None:
     metadata_path = ROOT / "GrokBotPlatformer.gbsproj"
     metadata = {
         "_resourceType": "project",
-        "name": "GrokBotPlatformer",
+        "name": "GROK BOT HERO",
         "author": "Joe",
         "notes": "Level 1 is two scenes, about five times the first demo. Open in GB Studio 4.2 or newer.",
         "_version": "4.2.0",
