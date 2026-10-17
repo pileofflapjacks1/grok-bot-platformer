@@ -78,6 +78,7 @@ LIVES_AT = (1, 0)
 AMMO_AT = (16, 0)
 COINS_AT = (8, 0)
 COIN_VAR = "8"
+POWER_VAR = "9"
 GOLD = (248, 176, 40, 255)  # mid band: the gold slot of Coin Gold
 # Screen bands. Speeds are GB Studio parallax values: 0 is normal, 2 is 1/4, 4 is 1/16.
 # Solids stay at row 10 and below so the floor scrolls with the player.
@@ -114,7 +115,7 @@ SEGMENTS = [
         "pits": [(70, 72)],
         "blobs": [(12, 13), (26, 10), (40, 13), (99, 10)],
         "coins": [(8, 11), (17, 10), (24, 7), (34, 10)],
-        "chips": [(54, 11)],
+        "chips": [(54, 11), (118, 13)],
         "electrons": [(60, 10), (88, 8), (94, 7), (104, 6), (146, 8)],
         "next": "scene_level1_high_ridge",
     },
@@ -132,7 +133,7 @@ SEGMENTS = [
         "pits": [(62, 64)],
         "blobs": [(10, 13), (23, 10), (36, 13), (81, 10)],
         "coins": [(6, 11), (14, 10), (27, 7)],
-        "chips": [(48, 11)],
+        "chips": [(48, 11), (140, 11)],
         "electrons": [(52, 8), (58, 10), (78, 7), (100, 9), (146, 8)],
         "next": None,
     },
@@ -1419,16 +1420,41 @@ def vanish_blob(suffix: str, bounce: bool) -> list:
     return steps
 
 
-def enemy_script(suffix: str, segment: dict) -> list:
+def blink_player(name: str, times: int = 5) -> list:
+    """About a second of hide/show flicker; doubles as the invulnerable window."""
+    steps = []
+    for index in range(times):
+        steps += [
+            event(f"{name}-blink-hide{index}", "EVENT_ACTOR_HIDE", {"actorId": "player"}),
+            wait_frames(f"{name}-blink-off{index}", 6),
+            event(f"{name}-blink-show{index}", "EVENT_ACTOR_SHOW", {"actorId": "player"}),
+            wait_frames(f"{name}-blink-on{index}", 6),
+        ]
+    return steps
+
+
+def lose_power(name: str) -> list:
+    """A hit while powered costs the power-up, not a hit or a life."""
+    return [
+        set_number(f"{name}-unpower", POWER_VAR, 0),
+        *player_palette_events(f"{name}-unpower-pal"),
+        beep(f"{name}-unpower-sound", 3),
+        event(f"{name}-unpower-knock", "EVENT_PLATFORMER_STATE_SET", {"state": "knockback"}),
+        *blink_player(f"{name}-unpower"),
+    ]
+
+
+def hurt_steps(suffix: str, segment: dict) -> list:
     # One overlap used to run this several times a second. The rate limit
-    # makes one touch count as one hit. Three hits cost a life.
+    # (variable 5, shared by every hazard) makes one touch count as one hit and
+    # gives about a second of grace. Three hits cost a life.
     lives_symbol = f"actor_lives_{segment['key']}"
-    hurt = [
+    return [
         rate_limit(
             f"{suffix}-hurt-limit",
             "5",
             1,
-            [
+            [if_value(f"{suffix}-if-powered", POWER_VAR, "==", 1, lose_power(suffix), [
                 event(f"{suffix}-hit-inc", "EVENT_INC_VALUE", {"variable": "4"}),
                 beep(f"{suffix}-hurt-sound", 2),
                 event(
@@ -1452,9 +1478,13 @@ def enemy_script(suffix: str, segment: dict) -> list:
                         game_over(suffix, True),
                     ),
                 ),
-            ],
+            ])],
         )
     ]
+
+
+def enemy_script(suffix: str, segment: dict) -> list:
+    hurt = hurt_steps(suffix, segment)
     # Falling uses a positive Y velocity. A landing often overlaps the blob,
     # so "player is above" alone misses the stomp.
     falling = event(
@@ -1512,9 +1542,12 @@ def electron_script(name: str, ammo_symbol: str) -> list:
 
 
 def chip_script(name: str) -> list:
-    # The chip unlocks firing. It does not change the jump.
+    # The chip unlocks firing for the run (var 2) and powers Grok Bot up
+    # (var 9): the outline glows until the next hit. It does not change the jump.
     return [
         set_number(f"{name}-flag", "2", 1),
+        set_number(f"{name}-power", POWER_VAR, 1),
+        *player_palette_events(f"{name}-pal"),
         beep(f"{name}-sound", 10),
         deactivate(f"{name}-hide"),
     ]
@@ -1652,6 +1685,7 @@ def segment_init(segment: dict) -> list:
             [
                 set_number(f"{key}-electrons", "0", 0),
                 set_number(f"{key}-coins", COIN_VAR, 0),
+                set_number(f"{key}-power", POWER_VAR, 0),
                 set_number(f"{key}-lives", "1", 3),
                 set_number(f"{key}-chip", "2", 0),
                 set_number(f"{key}-cooldown", "3", 0),
@@ -2180,6 +2214,8 @@ def build_resources(collisions: dict) -> None:
         palettes / "coin_gold.gbsres",
         palette("Coin Gold", sprite_palette("F8F0B0", "F0B020", "704010")),
     )
+    for name, colors in POWER_COLORS:
+        write_json(palettes / f"{name.lower().replace(' ', '_')}.gbsres", palette(name, colors))
     for name, colors in GROK_COLORS[1:]:
         write_json(palettes / f"{name.lower().replace(' ', '_')}.gbsres", palette(name, colors))
     for name, color in DOTS:
@@ -2255,6 +2291,13 @@ GROK_FILLS = [
     ("Grok Teal", "40D8C8"),
 ]
 GROK_COLORS = [(name, sprite_palette(fill, "181018", "181018")) for name, fill in GROK_FILLS]
+# Powered-up look: the same fill with a glowing outline (palette color 1).
+# A palette swap costs no VRAM, unlike 8 extra sprite sheets. Teal glow,
+# except on the teal body, which glows yellow so the change still reads.
+POWER_GLOW = {"Grok Teal": "F8F040"}
+POWER_COLORS = [
+    (name + " Power", sprite_palette(fill, POWER_GLOW.get(name, "30F8E0"), "181018")) for name, fill in GROK_FILLS
+]
 DOTS = [
     ("Dot White", "F8F8F8"),
     ("Dot Red", "F84848"),
@@ -2399,6 +2442,29 @@ def color_events(name: str) -> list:
     ]
 
 
+def player_palette_events(name: str) -> list:
+    """Level palette for slot 0: the chosen color, glowing when powered (var 9)."""
+    return [
+        if_value(
+            f"{name}-color{index}",
+            COLOR_VAR,
+            "==",
+            index,
+            [
+                if_value(
+                    f"{name}-powered{index}",
+                    POWER_VAR,
+                    "==",
+                    1,
+                    [palette_set(f"{name}-power{index}", POWER_COLORS[index][0])],
+                    [palette_set(f"{name}-palette{index}", pal)],
+                )
+            ],
+        )
+        for index, (pal, _colors) in enumerate(GROK_COLORS)
+    ]
+
+
 def apply_player_choice(key: str) -> list:
     """Level init: swap to the chosen shape's sheet (0 keeps the default), then the palette."""
     return [
@@ -2418,7 +2484,7 @@ def apply_player_choice(key: str) -> list:
             )
             for index in range(1, len(SHAPES))
         ],
-        *color_events(f"{key}-choice"),
+        *player_palette_events(f"{key}-choice"),
     ]
 
 
@@ -2696,6 +2762,12 @@ def patch_project() -> None:
                     "id": COIN_VAR,
                     "name": "coins",
                     "symbol": "var_coins",
+                    "type": "number",
+                },
+                {
+                    "id": POWER_VAR,
+                    "name": "powered",
+                    "symbol": "var_powered",
                     "type": "number",
                 },
                 {
