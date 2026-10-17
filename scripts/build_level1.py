@@ -13,12 +13,14 @@ in place. Identifiers are stable across runs.
 from __future__ import annotations
 
 import hashlib
+import re
 import json
 import struct
 import uuid
 import zlib
 from pathlib import Path
 
+SYMBOL_RE = re.compile(r"[a-z0-9_]+")
 ROOT = Path(__file__).resolve().parents[1]
 NS = uuid.UUID("6f1b9c3e-8a24-4b7e-9c1d-0a5e2f7b4d11")
 
@@ -1476,11 +1478,16 @@ def actor(
     collision_group: str = "1",
     move_speed: int = 1,
 ) -> dict:
+    # Callers key actors as actor_<segment>-<kind>N; the id stays hashed from that
+    # key (stable ids, and enemy_symbols() splits on "-"), but the emitted C/asm
+    # symbol must be a valid identifier: the assembler rejects hyphens.
+    c_symbol = symbol.replace("-", "_")
+    assert SYMBOL_RE.fullmatch(c_symbol), f"bad actor symbol {c_symbol!r}"
     return {
         "_resourceType": "actor",
         "id": uid(symbol),
         "_index": index,
-        "symbol": symbol,
+        "symbol": c_symbol,
         "prefabId": "",
         "name": name,
         "coordinateType": "tiles",
