@@ -57,7 +57,7 @@ Eight shapes and four colors are in the picker; see `docs/CHARACTER_SELECTION.md
 
 ### Budgets (per Level 1 scene)
 - Actors: 20 / 20 in each half (GB Studio's `MAX_ACTORS`; the 3 pinned HUD badges count). Triggers: 2 / 30. GB Studio only runs actors near the screen, and the generator fails the build if any screen-wide window could put more than 10 hardware sprites on one row, counting the player, one electron shot in flight (fire is capped at one shot per 0.6 s, each living 0.55 s) and, near the Bolt Tower, its one bolt. The current peak is 10/10.
-- Sprite palettes: 6 / 8 slots (Grok Bot, Blob Red, Electron Blue, Chip Gray, Coin Gold, Flyer Violet). The power-up glow and the picker colors swap slot 0 instead of using new slots.
+- Sprite palettes: 6 / 8 slots (Grok Bot, Blob Red, Electron Blue, Chip Gray, Roadster White, Flyer Violet; the old Coin Gold slot was freed when coins were removed and reused for the roadster). The power-up glow and the picker colors swap slot 0 instead of using new slots.
 - Sprite VRAM (8x16 tiles, before GB Studio removes duplicates): Green Hills 66, High Ridge 74, i.e. 132 / 148 8x8 tiles, including one 8-tile player slot. Color-only mode splits sprite tiles across both VRAM banks.
 
 ## Next Steps
