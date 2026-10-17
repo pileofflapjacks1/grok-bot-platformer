@@ -80,6 +80,7 @@ COINS_AT = (8, 0)
 COIN_VAR = "8"
 POWER_VAR = "9"
 GOLD = (248, 176, 40, 255)  # mid band: the gold slot of Coin Gold
+VIOLET = (152, 160, 224, 255)  # mid band: the body slot of Flyer Violet
 # Screen bands. Speeds are GB Studio parallax values: 0 is normal, 2 is 1/4, 4 is 1/16.
 # Solids stay at row 10 and below so the floor scrolls with the player.
 PARALLAX = [
@@ -117,6 +118,7 @@ SEGMENTS = [
         "coins": [(8, 11), (17, 10), (24, 7), (34, 10)],
         "chips": [(54, 11), (118, 13)],
         "electrons": [(60, 10), (88, 8), (94, 7), (104, 6), (146, 8)],
+        "flyers": [(80, 9), (132, 7)],
         "next": "scene_level1_high_ridge",
     },
     {
@@ -135,6 +137,7 @@ SEGMENTS = [
         "coins": [(6, 11), (14, 10), (27, 7)],
         "chips": [(48, 11), (140, 11)],
         "electrons": [(52, 8), (58, 10), (78, 7), (100, 9), (146, 8)],
+        "flyers": [(70, 9), (128, 8)],
         "next": None,
     },
 ]
@@ -144,7 +147,7 @@ HUD_ACTORS = 3
 def segment_bodies(segment: dict) -> list[tuple[str, int, int]]:
     """Every non-HUD actor in a half as (kind, x, y)."""
     bodies = []
-    for kind in ("blobs", "coins", "chips", "electrons"):
+    for kind in ("blobs", "coins", "chips", "electrons", "flyers"):
         bodies.extend((kind, x, y) for x, y in segment.get(kind, []))
     return bodies
 
@@ -621,6 +624,40 @@ def paint_coin() -> list[list[tuple[int, int, int, int]]]:
     return image
 
 
+def paint_flyer() -> list[list[tuple[int, int, int, int]]]:
+    """Zap Bat: a small round bot with a visor and two flapping wings.
+
+    Frame 0 wings up, frame 1 wings down. Body VIOLET (mid), wings and visor
+    WHITE (light), outline BLACK (dark).
+    """
+    image = blank(32, 16, CLEAR)
+    for frame, up in ((0, True), (1, False)):
+        ox = frame * 16
+        # Wings first so the body outline sits on top.
+        wing_rows = ((3, 4), (4, 6), (5, 7)) if up else ((8, 4), (9, 6), (10, 7))
+        for y, length in wing_rows:
+            for x in range(length):
+                for wx in (x, 15 - x):
+                    image[y][ox + wx] = BLACK if x == 0 or y == wing_rows[0][0] else WHITE
+        for y in range(16):
+            for x in range(16):
+                dx = (x + 0.5 - 8) / 4.6
+                dy = (y + 0.5 - 8) / 4.2
+                dist = dx * dx + dy * dy
+                if dist <= 0.62:
+                    image[y][ox + x] = VIOLET
+                elif dist <= 1:
+                    image[y][ox + x] = BLACK
+        for x in range(6, 10):
+            image[7][ox + x] = WHITE
+        image[7][ox + 7] = BLACK
+        image[7][ox + 8] = BLACK
+        # Little feet so it reads as a bot, not a ball.
+        image[12][ox + 6] = BLACK
+        image[12][ox + 9] = BLACK
+    return image
+
+
 def coin_total() -> int:
     return sum(len(segment["coins"]) for segment in SEGMENTS)
 
@@ -987,7 +1024,7 @@ def tile_ref(name: str, x: int, slice_x: int, palette_index: int = 0) -> dict:
 # Scene sprite palette slots. In color mode GB Studio 4 reads the palette
 # from each sprite tile's paletteIndex (compileSprites.ts makeProps), not from
 # the actor's paletteId. Slot 0 is Grok Bot; the picker color swaps slot 0.
-SLOT = {"enemy": 1, "lives": 1, "electron": 2, "ammo": 2, "chip": 3, "coin": 4, "coinhud": 4}
+SLOT = {"enemy": 1, "lives": 1, "electron": 2, "ammo": 2, "chip": 3, "coin": 4, "coinhud": 4, "flyer": 5}
 
 
 def frame_of(name: str, slice_x: int) -> dict:
@@ -1402,6 +1439,31 @@ def enemy_update(suffix: str) -> list:
     ]
 
 
+def move_path(name: str, dx: int, dy: int) -> dict:
+    return event(
+        name,
+        "EVENT_ACTOR_MOVE_RELATIVE",
+        {
+            "actorId": "$self$",
+            "x": {"type": "number", "value": dx},
+            "y": {"type": "number", "value": dy},
+            "units": "tiles",
+            "moveType": "diagonal",
+            "useCollisions": False,
+            "collideWith": [],
+        },
+    )
+
+
+def flyer_update(suffix: str) -> list:
+    """A bobbing left/right loop: two diagonal hops each way, 8 tiles wide."""
+    steps = []
+    for index, (dx, dy) in enumerate(((2, -1), (2, 1), (-2, -1), (-2, 1))):
+        steps.append(move_path(f"{suffix}-path{index}", dx, dy))
+    steps.append(wait_frames(f"{suffix}-path-wait", 10))
+    return steps
+
+
 def vanish_blob(suffix: str, bounce: bool) -> list:
     # Hide first so the sprite is gone even if deactivate ends the script.
     steps = [
@@ -1791,6 +1853,7 @@ def build_images() -> dict:
     write_png(sprites / "electron.png", 16, 16, paint_electron())
     write_png(sprites / "silicon_chip.png", 16, 16, paint_chip())
     write_png(sprites / "coin.png", 16, 16, paint_coin())
+    write_png(sprites / "flyer.png", 32, 16, paint_flyer())
     write_png(sprites / "coin_hud.png", (coin_total() + 1) * 16, 16, paint_coin_hud())
     write_png(sprites / "lives.png", 64, 16, paint_lives())
     write_png(sprites / "ammo.png", ammo_frames * 16, 16, paint_ammo())
@@ -1974,6 +2037,25 @@ def write_segment(
             ),
         )
         next_index += 1
+    for index, (x, y) in enumerate(segment.get("flyers", []), start=1):
+        suffix = f"{key}-flyer{index}"
+        write_json(
+            actor_dir / f"flyer_{index}.gbsres",
+            actor(
+                name=f"Zap Bat {index}",
+                symbol=f"actor_{suffix}",
+                index=next_index,
+                x=x,
+                y=y,
+                sprite_symbol="sprite_flyer",
+                palette_name="Flyer Violet",
+                # Same contact rules as a blob: stomp it, shoot it, or get hurt.
+                script=enemy_script(suffix, segment),
+                update_script=flyer_update(suffix),
+                hit1_script=shot_blob(suffix),
+            ),
+        )
+        next_index += 1
     for chip_index, (chip_x, chip_y) in enumerate(segment["chips"], start=1):
         # The first chip keeps its original id and file name.
         suffix = f"{key}-chip" if chip_index == 1 else f"{key}-chip{chip_index}"
@@ -2093,6 +2175,20 @@ def build_resources(collisions: dict) -> None:
             animation_type="fixed",
             animations=fixed_animation("coin"),
             num_tiles=2,
+        ),
+    )
+    write_json(
+        sprites / "flyer.png.gbsres",
+        sprite_resource(
+            name="flyer",
+            symbol="sprite_flyer",
+            filename="flyer.png",
+            image_path=sprites / "flyer.png",
+            width=32,
+            height=16,
+            animation_type="fixed",
+            animations=frames_animation("flyer", 2),
+            num_tiles=4,
         ),
     )
     write_json(
@@ -2248,6 +2344,10 @@ def build_resources(collisions: dict) -> None:
         palettes / "coin_gold.gbsres",
         palette("Coin Gold", sprite_palette("F8F0B0", "F0B020", "704010")),
     )
+    write_json(
+        palettes / "flyer_violet.gbsres",
+        palette("Flyer Violet", sprite_palette("F0E8FF", "9868E0", "281848")),
+    )
     for name, colors in POWER_COLORS:
         write_json(palettes / f"{name.lower().replace(' ', '_')}.gbsres", palette(name, colors))
     for name, colors in GROK_COLORS[1:]:
@@ -2278,7 +2378,7 @@ def build_resources(collisions: dict) -> None:
         uid("palette-Electron Blue"),
         uid("palette-Chip Gray"),
         uid("palette-Coin Gold"),
-        "default-sprite",
+        uid("palette-Flyer Violet"),
         "default-sprite",
         "default-sprite",
     ]
@@ -2740,7 +2840,7 @@ def patch_project() -> None:
         uid("palette-Electron Blue"),
         uid("palette-Chip Gray"),
         uid("palette-Coin Gold"),
-        "default-sprite",
+        uid("palette-Flyer Violet"),
         "default-sprite",
         "default-sprite",
     ]
@@ -2938,6 +3038,13 @@ def validate_layout() -> None:
                 landing += 1
             if landing < 6:
                 raise SystemExit(f"{label} has only {landing} tiles of floor before the pit")
+        for x, y in segment.get("flyers", []):
+            for path_x in range(x - 4, x + 6):
+                top = solid_top(segment, path_x)
+                if top is not None and top <= y + 2:
+                    raise SystemExit(f"{label} flyer at {(x, y)} clips the ground on its path")
+            if y + 1 > FLOOR_TOP - 3:
+                raise SystemExit(f"{label} flyer at {(x, y)} is too low to walk under")
         for x, y in segment["blobs"]:
             if solid_top(segment, x) != y + 2:
                 raise SystemExit(f"{label} blob at {(x, y)} is not standing on a ledge")
