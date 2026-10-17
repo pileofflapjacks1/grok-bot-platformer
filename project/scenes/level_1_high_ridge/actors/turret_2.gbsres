@@ -864,6 +864,93 @@
                                         "value": 5
                                       }
                                     }
+                                  },
+                                  {
+                                    "id": "cbcb739b-6417-5c57-b9b2-4c1a2a607b85",
+                                    "command": "EVENT_IF_VALUE",
+                                    "args": {
+                                      "variable": "3",
+                                      "operator": "==",
+                                      "comparator": 0,
+                                      "__collapseElse": true
+                                    },
+                                    "children": {
+                                      "true": [
+                                        {
+                                          "id": "5e02b039-ab32-5366-a41a-ffb289de327f",
+                                          "command": "EVENT_PLATFORMER_STATE_SET",
+                                          "args": {
+                                            "state": "blank"
+                                          }
+                                        },
+                                        {
+                                          "id": "27f097a0-daac-503e-96c4-109672e8d99f",
+                                          "command": "EVENT_FADE_OUT",
+                                          "args": {
+                                            "speed": "2"
+                                          }
+                                        },
+                                        {
+                                          "id": "a80d5ddf-4865-546b-9325-452836de8dc0",
+                                          "command": "EVENT_ACTOR_SET_POSITION",
+                                          "args": {
+                                            "actorId": "player",
+                                            "x": {
+                                              "type": "number",
+                                              "value": 2
+                                            },
+                                            "y": {
+                                              "type": "number",
+                                              "value": 13
+                                            },
+                                            "units": "tiles"
+                                          }
+                                        },
+                                        {
+                                          "id": "320c73bb-17cd-538d-ac5d-007022609849",
+                                          "command": "EVENT_ENGINE_FIELD_SET",
+                                          "args": {
+                                            "engineFieldKey": "plat_vel_x",
+                                            "value": {
+                                              "type": "number",
+                                              "value": 0
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "id": "bbc6faf7-d49e-5a74-9f3d-f5cdf04da471",
+                                          "command": "EVENT_ENGINE_FIELD_SET",
+                                          "args": {
+                                            "engineFieldKey": "plat_vel_y",
+                                            "value": {
+                                              "type": "number",
+                                              "value": 0
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "id": "db412b84-3de7-58ab-a2a3-79cd0e52af6d",
+                                          "command": "EVENT_PLATFORMER_STATE_SET",
+                                          "args": {
+                                            "state": "ground"
+                                          }
+                                        },
+                                        {
+                                          "id": "18039da3-8ece-5b6c-a06d-9d510f28c585",
+                                          "command": "EVENT_ACTOR_SHOW",
+                                          "args": {
+                                            "actorId": "player"
+                                          }
+                                        },
+                                        {
+                                          "id": "00a124ce-10cc-5c36-b3f8-2eafaefc8b46",
+                                          "command": "EVENT_FADE_IN",
+                                          "args": {
+                                            "speed": "2"
+                                          }
+                                        }
+                                      ]
+                                    }
                                   }
                                 ]
                               }

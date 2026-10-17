@@ -1830,6 +1830,14 @@ def hurt_steps(suffix: str, segment: dict) -> list:
                         [
                             beep(f"{suffix}-life-sound", 1),
                             shake(f"{suffix}-life-shake", 0.4, 5),
+                            # Like a pit: back to the start of this half.
+                            unless_done(f"{suffix}-life-respawn-check", [
+                                event(f"{suffix}-life-freeze", "EVENT_PLATFORMER_STATE_SET", {"state": "blank"}),
+                                fade(f"{suffix}-life-out", "out"),
+                                *respawn(f"{suffix}-life", *PLAYER_START),
+                                event(f"{suffix}-life-show", "EVENT_ACTOR_SHOW", {"actorId": "player"}),
+                                fade(f"{suffix}-life-in", "in"),
+                            ]),
                         ],
                         game_over(suffix, True, from_hit=True),
                     ),
