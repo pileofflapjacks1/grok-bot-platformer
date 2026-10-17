@@ -1480,20 +1480,6 @@ def fade(name: str, direction: str) -> dict:
     return event(name, command, {"speed": "2"})
 
 
-def rate_limit(name: str, variable: str, seconds: float, body: list) -> dict:
-    return event(
-        name,
-        "EVENT_RATE_LIMIT",
-        {
-            "variable": variable,
-            "units": "time",
-            "time": {"type": "number", "value": seconds},
-            "frames": {"type": "number", "value": 1},
-        },
-        {"true": body},
-    )
-
-
 def lose_life(name: str, lives_symbol: str, alive: list, dead: list) -> list:
     # Variable 1 is lives. Variable 4 is the hit count toward the next life.
     return [
@@ -1647,10 +1633,12 @@ def blink_player(name: str, times: int = 5) -> list:
     return steps
 
 
-def lose_power(name: str) -> list:
-    """A hit while powered costs the power-up, not a hit or a life."""
+def lose_power(name: str, segment: dict) -> list:
+    """A hit while powered costs the power-up and all electron ammo, not a life."""
     return [
         set_number(f"{name}-unpower", POWER_VAR, 0),
+        set_number(f"{name}-unpower-ammo", "0", 0),
+        show_ammo(f"{name}-unpower-ammo-hud", f"actor_ammo_{segment['key']}"),
         *player_palette_events(f"{name}-unpower-pal"),
         beep(f"{name}-unpower-sound", 3),
         event(f"{name}-unpower-knock", "EVENT_PLATFORMER_STATE_SET", {"state": "knockback"}),
@@ -1681,7 +1669,7 @@ def hurt_steps(suffix: str, segment: dict) -> list:
             "==",
             0,
             [set_number(f"{suffix}-hurt-lock", HURT_LOCK, 1)]
-            + [if_value(f"{suffix}-if-powered", POWER_VAR, "==", 1, lose_power(suffix), [
+            + [if_value(f"{suffix}-if-powered", POWER_VAR, "==", 1, lose_power(suffix, segment), [
                 event(f"{suffix}-hit-inc", "EVENT_INC_VALUE", {"variable": "4"}),
                 beep(f"{suffix}-hurt-sound", 2),
                 event(
@@ -1822,18 +1810,12 @@ def attach_fire(segment: dict, prefix: str | None = None) -> dict:
         beep(f"{key}-shot-sound", 8),
         launch_electron(f"{key}-shot-launch"),
     ]
-    limited = event(
-        f"{key}-shot-limit",
-        "EVENT_RATE_LIMIT",
-        {
-            "variable": "3",
-            "units": "time",
-            "time": {"type": "number", "value": SHOT_GAP},
-            "frames": {"type": "number", "value": 1},
-        },
-        {"true": shot},
-    )
-    armed = if_value(f"{key}-shot-chip", "2", ">", 0, [limited])
+    # No EVENT_RATE_LIMIT here (it had the same sys_time/0 init bug as the
+    # hurt cooldown and could block firing for minutes). GBVM does not start
+    # an input script again while it is still running (events_update checks
+    # the handle), so waiting at the end of the shot is the rate limit.
+    shot.append(wait_frames(f"{key}-shot-gap", round(SHOT_GAP * 60)))
+    armed = if_value(f"{key}-shot-chip", "2", ">", 0, shot)
     has_ammo = if_value(f"{key}-shot-ammo", "0", ">", 0, [armed])
     return event(
         f"{key}-fire-input",
@@ -2009,7 +1991,6 @@ def segment_init(segment: dict) -> list:
                 set_number(f"{key}-power", POWER_VAR, 0),
                 set_number(f"{key}-lives", "1", 3),
                 set_number(f"{key}-chip", "2", 0),
-                set_number(f"{key}-cooldown", "3", 0),
                 set_number(f"{key}-hits", "4", 0),
                 set_engine(f"{key}-jump", "plat_jump_vel", BASE_JUMP),
             ]
@@ -3110,12 +3091,6 @@ def patch_project() -> None:
                     "id": "2",
                     "name": "chip",
                     "symbol": "var_chip",
-                    "type": "number",
-                },
-                {
-                    "id": "3",
-                    "name": "shot_cooldown",
-                    "symbol": "var_shot_cooldown",
                     "type": "number",
                 },
                 {
