@@ -1700,9 +1700,10 @@ def reset_run(name: str) -> list:
 
 
 def game_over(name: str, fade_out_first: bool, from_hit: bool = False) -> list:
-    """Game Over text, then restart Level 1.
+    """Game Over text, full reset of the run, then back to the title screen.
 
-    from_hit: called from a hurt script, which owns hurt_lock == 1. If the
+    from_hit: called from a hurt script, which owns hurt_lock == HURT_LIFE (3)
+    while it takes the life. If the
     lock is anything else by the time the fade-out ends, the roadster (or a
     pit) has taken over, so Game Over is skipped: a last-life hit can never
     race LEVEL 1 CLEAR. The screen fades back in and the cutscene carries on.
@@ -2213,10 +2214,12 @@ def clear_hazards(name: str, segment: dict) -> list:
     """Level done: no enemy, tower or bolt may touch the player any more.
 
     LEVEL_DONE=1 makes every hurt path a no-op (checked first, and again
-    before knockback). Disabling the player's collisions clears
-    ACTOR_FLAG_COLLISION, which gbvm's projectile loop tests before a
-    player-mask bolt can hit (projectiles.c:121), so bolts already in flight
-    pass through. Deactivating each enemy terminates its update script
+    before knockback). Bolts already in flight are NOT removed and still
+    "hit": gbvm tests a player-mask projectile against PLAYER's bounds and
+    collision group only (projectiles.c:120-126), not ACTOR_FLAG_COLLISION,
+    so the bolt runs player hit 3, whose hurt path no-ops on LEVEL_DONE, and
+    is destroyed. Player collisions are still disabled so actor contact
+    cannot start anything. Deactivating each enemy terminates its update script
     (towers stop firing) and detaches its hit script (actor.c:276-281); they
     are hidden and their collisions disabled too, in case the engine's
     on-screen activation brings one back.
