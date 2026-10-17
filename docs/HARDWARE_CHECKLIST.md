@@ -1,4 +1,4 @@
-# Hardware Audit Checklist (Grok Bot Platformer)
+# Hardware Audit Checklist (GROK BOT HERO)
 
 Run before adding heavy art or new scenes.
 

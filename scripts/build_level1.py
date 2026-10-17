@@ -1156,7 +1156,11 @@ def sprite_resource(
     animations: list[dict],
     num_tiles: int,
     canvas_width: int = 16,
+    bounds: tuple[int, int, int, int] | None = None,
 ) -> dict:
+    # Bounds are (x, y, w, h) from the top-left of the 16 px base, y down
+    # (compileBounds in generateGBVMData.ts).
+    bx, by, bw, bh = bounds or (min(0, 8 - canvas_width // 2), 0, canvas_width, 16)
     return {
         "_resourceType": "sprite",
         "id": uid(symbol),
@@ -1178,10 +1182,10 @@ def sprite_resource(
         "canvasHeight": 16,
         # Bounds are relative to the same 16 px base as metasprite tiles, so a
         # wider canvas starts (canvas_width / 2 - 8) px left of it.
-        "boundsX": min(0, 8 - canvas_width // 2),
-        "boundsY": 0,
-        "boundsWidth": canvas_width,
-        "boundsHeight": 16,
+        "boundsX": bx,
+        "boundsY": by,
+        "boundsWidth": bw,
+        "boundsHeight": bh,
         "animSpeed": 8 if animation_type == "platform_player" else 15,
         "filename": filename,
         "width": width,
@@ -1586,7 +1590,7 @@ def move_path(name: str, dx: int, dy: int) -> dict:
 
 
 def flyer_update(suffix: str) -> list:
-    """A bobbing left/right loop: two diagonal hops each way, 8 tiles wide."""
+    """A bobbing left/right loop: two diagonal hops each way, 4 tiles wide."""
     steps = []
     for index, (dx, dy) in enumerate(((2, -1), (2, 1), (-2, -1), (-2, 1))):
         steps.append(move_path(f"{suffix}-path{index}", dx, dy))
@@ -1611,7 +1615,7 @@ def launch_bolt(name: str) -> dict:
             "direction": "left",
             "speed": 2,
             "animSpeed": 15,
-            "lifeTime": 2,
+            "lifeTime": BOLT_LIFE,
             "initialOffset": 8,
             "loopAnim": True,
             "destroyOnHit": True,
@@ -1797,7 +1801,7 @@ def launch_electron(name: str) -> dict:
             "direction": "right",
             "speed": 3,
             "animSpeed": 15,
-            "lifeTime": 1.2,
+            "lifeTime": SHOT_LIFE,
             "initialOffset": 12,
             "loopAnim": True,
             "destroyOnHit": True,
@@ -1807,10 +1811,24 @@ def launch_electron(name: str) -> dict:
     )
 
 
-def attach_fire(segment: dict) -> dict:
+def no_fire(name: str) -> dict:
+    """Unbind B so a cutscene or the pit fall cannot fire from the hidden player."""
+    return event(name, "EVENT_REMOVE_INPUT_SCRIPT", {"input": ["b"]})
+
+
+# Shot cap: one electron per SHOT_GAP seconds, each living SHOT_LIFE seconds,
+# so at most MAX_SHOTS are in flight (2 sprites each on the player's row).
+SHOT_GAP = 0.6
+SHOT_LIFE = 0.55
+MAX_SHOTS = 1
+BOLT_LIFE = 1.8  # under the 2 s reload, so one bolt at a time
+
+
+def attach_fire(segment: dict, prefix: str | None = None) -> dict:
     # B still runs. A press fires only after the chip, and only while ammo remains.
-    key = segment["key"]
-    ammo_symbol = f"actor_ammo_{key}"
+    # A prefix gives re-attached copies (after a pit respawn) their own event ids.
+    key = prefix or segment["key"]
+    ammo_symbol = f"actor_ammo_{segment['key']}"
     shot = [
         event(f"{key}-shot-dec", "EVENT_DEC_VALUE", {"variable": "0"}),
         show_counter(f"{key}-shot-hud", ammo_symbol, "0"),
@@ -1823,7 +1841,7 @@ def attach_fire(segment: dict) -> dict:
         {
             "variable": "3",
             "units": "time",
-            "time": {"type": "number", "value": 0.3},
+            "time": {"type": "number", "value": SHOT_GAP},
             "frames": {"type": "number", "value": 1},
         },
         {"true": shot},
@@ -1861,23 +1879,36 @@ def roadster_script(name: str) -> list:
         event(f"{name}-freeze", "EVENT_PLATFORMER_STATE_SET", {"state": "blank"}),
         set_engine(f"{name}-stop-vx", "plat_vel_x", 0),
         set_engine(f"{name}-stop-vy", "plat_vel_y", 0),
+        no_fire(f"{name}-nofire"),
         event(f"{name}-board", "EVENT_ACTOR_HIDE", {"actorId": "player"}),
         beep(f"{name}-door", 6),
         wait_frames(f"{name}-start", 20),
         beep(f"{name}-engine", 3),
-        drive("roll", 3, 0, "horizontal"),
+        # Keep the drive short so the car stays on the screen the camera shows
+        # (it follows the hidden player at the car's rest spot).
+        drive("roll", 1, 0, "horizontal"),
         beep(f"{name}-lift", 9),
-        drive("climb", 2, -3, "diagonal"),
-        drive("away", 2, -12, "diagonal"),
+        drive("climb", 1, -3, "diagonal"),
+        # Relative moves saturate at y=0, so the car cannot leave through the
+        # top. It rises to row 2 (just under the HUD), blinks out and is hidden
+        # there, which reads as flying off instead of parking on the edge.
+        drive("away", 1, -8, "diagonal"),
+        event(f"{name}-flash-off", "EVENT_ACTOR_HIDE", {"actorId": "$self$"}),
+        wait_frames(f"{name}-flash-wait", 4),
+        event(f"{name}-flash-on", "EVENT_ACTOR_SHOW", {"actorId": "$self$"}),
+        wait_frames(f"{name}-flash-wait2", 4),
         event(f"{name}-gone", "EVENT_ACTOR_HIDE", {"actorId": "$self$"}),
+        beep(f"{name}-whoosh", 10),
         wait_frames(f"{name}-beat", 20),
-        event(f"{name}-text", "EVENT_TEXT", {"text": "LEVEL CLEAR"}),
-        *exit_script(),
+        # The clear scene shows LEVEL CLEAR once, for this path and the fallback exit.
+        *exit_script(name),
     ]
 
 
-def exit_script() -> list:
-    return [switch_scene("exit-clear", "scene_level1_clear", 2, CLEAR_TOP - 2)]
+def exit_script(prefix: str = "exit") -> list:
+    # Each caller passes its own prefix so no event id is shared between the
+    # roadster and the fallback exit trigger. "exit" keeps the trigger's id.
+    return [switch_scene(f"{prefix}-clear", "scene_level1_clear", 2, CLEAR_TOP - 2)]
 
 
 def respawn(name: str, x: int, y: int) -> list:
@@ -1948,6 +1979,7 @@ def pit_script(name: str, segment: dict) -> list:
         ]
     return [
         event(f"{name}-freeze", "EVENT_PLATFORMER_STATE_SET", {"state": "blank"}),
+        no_fire(f"{name}-nofire"),
         set_engine(f"{name}-stop-vx", "plat_vel_x", 0),
         set_engine(f"{name}-stop-vy", "plat_vel_y", 0),
         beep(f"{name}-fall-sound", 1),
@@ -1963,6 +1995,7 @@ def pit_script(name: str, segment: dict) -> list:
             respawn(name, start_x, start_y)
             + [
                 event(f"{name}-back", "EVENT_ACTOR_SHOW", {"actorId": "player"}),
+                attach_fire(segment, f"{name}-refire"),
                 fade(f"{name}-in", "in"),
             ],
             game_over(name, False),
@@ -2455,6 +2488,8 @@ def build_resources(collisions: dict) -> None:
                 animation_type="fixed",
                 animations=fixed_animation(name),
                 num_tiles=2,
+                # The bolt is a ~7 px ball: an 8x8 centred box, so near misses miss.
+                bounds=(4, 4, 8, 8) if name == "bolt" else None,
             ),
         )
     write_json(
@@ -2679,7 +2714,7 @@ def build_resources(collisions: dict) -> None:
             palette_ids=bg_ids,
             sprite_palette_ids=sprite_ids,
             script=[
-                event("clear-text", "EVENT_TEXT", {"text": "Level 1 clear!"}),
+                event("clear-text", "EVENT_TEXT", {"text": "LEVEL CLEAR"}),
                 wait_frames("clear-wait", 30),
                 switch_scene("clear-to-title", "scene_title", *MENU_PLAYER),
             ],
@@ -3287,16 +3322,25 @@ def scanline_peak(segment: dict) -> int:
         for _x, y in hud:
             rows[y] += 2
             rows[y + 1] += 2
+        bolts = 0
         for kind, x, y in segment_bodies(segment):
             reach = PATROL.get(kind, 0)
-            width = 4 if kind == "roadster" else 2
-            if x + width + reach <= left or x - reach >= left + 20:
+            # The roadster's art spans x-1..x+3 (tiles centred on its 16 px base).
+            x0, x1 = (x - 1, x + 3) if kind == "roadster" else (x, x + 2)
+            if x1 + reach <= left or x0 - reach >= left + 20:
                 continue
-            for row in (y, y + 1):
+            if kind == "turret":
+                bolts = 2
+            # Flyers bob one row up from their placed row.
+            top = y - 1 if kind == "flyers" else y
+            for row in range(top, y + 2):
                 if 0 <= row < len(rows):
                     rows[row] += HW_SPRITES.get(kind, 2)
-        # The player can stand on any row; add its 2 sprites to the worst row.
-        worst = max(worst, max(rows) + 2)
+        # The player (2), its electron shots (2 each, on its row) and a turret
+        # bolt (aimed at it) can share any row the player reaches; it never
+        # reaches the HUD rows 0-1.
+        moving = 2 + MAX_SHOTS * 2 + bolts
+        worst = max(worst, max(rows[0], rows[1]), max(rows[2:]) + moving)
     return worst
 
 
