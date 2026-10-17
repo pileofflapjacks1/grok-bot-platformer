@@ -2051,6 +2051,10 @@ def _unpowered_hit(suffix: str, segment: dict, lives_symbol: str) -> list:
                                 # B is unbound through the fade (like the pit),
                                 # so no electron is spent while the screen is dark.
                                 no_fire(f"{suffix}-life-nofire"),
+                                # Respawn unpowered, like a pit (matters when
+                                # the 3rd hit lands while powered).
+                                set_number(f"{suffix}-life-unpower", POWER_VAR, 0),
+                                *player_palette_events(f"{suffix}-life-unpower-pal"),
                                 # Reload this half at its start (see RESPAWN_VAR).
                                 *respawn_reload(f"{suffix}-life", segment),
                             ]),
