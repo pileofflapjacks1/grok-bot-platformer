@@ -3241,7 +3241,7 @@ PRESS_TEXT = "PRESS START"
 PRESS_PARTS = 4
 PRESS_AT = (6, 11)
 TITLE_BOT_AT = (9, CLEAR_TOP - 2)
-PICKER_BOT_AT = (9, 8)
+PICKER_BOT_AT = (9, 9)
 
 GLYPHS = {
     "A": ("01110", "10001", "10001", "11111", "10001", "10001", "10001"),
@@ -3341,9 +3341,16 @@ def paint_picker():
                 for x in range(8):
                     image[tile_y * 8 + y][tx * 8 + x] = SKY
         draw_text(image, tile_x * 8, tile_y * 8, text, OUTLINE)
-    arrow_y = (PICKER_BOT_AT[1] + 1) * 8
+    # Arrows centred on the bot, measured in PyBoy. Every shape's body is
+    # 10-14 px wide, centred at x 79.5, and sits 8.5 +/- 1 px below the top of
+    # its 16 px cell. The 7 px glyphs used to sit on the tile row below the
+    # bot, ~10 px too low. The bot moved down a row (row 8 put it over the
+    # right-hand hill) and the arrows' top is now 2 px above its cell bottom
+    # row, centring them on the body. The right arrow moves 1 px right so the
+    # tip-to-tip span (49..110) centres at 79.5, like the even-width bodies.
+    arrow_y = PICKER_BOT_AT[1] * 8 - 2
     draw_text(image, (PICKER_BOT_AT[0] - 3) * 8, arrow_y, "<", OUTLINE)
-    draw_text(image, (PICKER_BOT_AT[0] + 4) * 8, arrow_y, ">", OUTLINE)
+    draw_text(image, (PICKER_BOT_AT[0] + 4) * 8 + 1, arrow_y, ">", OUTLINE)
     draw_text(image, 7 * 8, 14 * 8, "A = GO", OUTLINE)
     dot = indexed_tile(DOT_TILE, FAR)
     for index, tile_x in enumerate((5, 8, 11, 14)):
