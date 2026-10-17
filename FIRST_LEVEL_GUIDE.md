@@ -1,4 +1,4 @@
-# Grok Bot Platformer — First Playable Level Guide
+# GROK BOT HERO — First Playable Level Guide
 
 **Project:** GrokBotPlatformer (scaffolded with grok-chromatic-agent)  
 **Target:** ModRetro Chromatic / Game Boy Color  

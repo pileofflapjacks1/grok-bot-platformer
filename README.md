@@ -1,4 +1,4 @@
-# GrokBotPlatformer
+# GROK BOT HERO
 
 An original GB Studio platformer for the ModRetro Chromatic and other Game Boy Color–compatible hardware. **Only Level 1 is built so far.**
 
@@ -12,20 +12,23 @@ An original GB Studio platformer for the ModRetro Chromatic and other Game Boy C
 - `SKILL.md` — pointer to the grok-chromatic-agent skill
 
 ## Play Level 1
-Open `GrokBotPlatformer.gbsproj` in GB Studio 4.2 or newer and press Play.
+The game is called **GROK BOT HERO** (the project name in `GrokBotPlatformer.gbsproj`; the file name is unchanged so existing clones keep working). Open `GrokBotPlatformer.gbsproj` in GB Studio 4.2 or newer and press Play.
 
-Boot flow: Title ("GROK BOT", PRESS START) → Picker → Level 1. Start or A leaves the title right away. On the picker, Left/Right switches round or square head, Up/Down cycles white, red, yellow, teal, and A starts. The default is round + white, so Start, A gets you playing. The choice is kept through pits and Game Over (which restarts Level 1, not the picker). After "Level 1 clear!" a button press returns to the title.
+Boot flow: Title ("GROK BOT HERO", PRESS START) → Picker → Level 1. Start or A leaves the title right away. On the picker (on-screen hints: LEFT/RIGHT: SHAPE, UP/DOWN: COLOR), Left/Right cycles circle, square, heart, star, triangle, teardrop, oval, and blob (wrapping both ways), Up/Down cycles white, red, yellow, teal, and A starts. The default is circle + white, so Start, A gets you playing. The choice is kept through pits and Game Over (which restarts Level 1, not the picker). After "LEVEL 1 CLEAR" a button press returns to the title.
 
 Level 1 is two scenes and 340 tiles wide, about five times the previous run. Green Hills leads straight into High Ridge. A full clear is a few minutes, not a 15 second clip.
 
-- Grok Bot is a round head with an antenna and black capsule eyes. Left facing is mirrored.
+- Grok Bot uses the locked Grok Imagine style: a solid shape with a thin black outline and two short thick black oval eyes (no mouth, eye whites, pupils, or antenna). Left facing is mirrored.
 - Move with the arrows or WASD. Jump with Alt, Z, or J. Hold Control, K, or X to run. That same button fires an electron once Grok Bot is armed.
-- Thirteen Grok Blobs, with eyes, a belly, brows, and feet. Stomping one hides it and bounces you. A shot also removes the blob, without the bounce. A side touch knocks you back, shakes the screen, and counts as one hit. Three hits cost one life. You stay where you are, and the hit count resets. There is about a second between hits, so standing on a blob does not count as three.
-- Twenty-two electrons. Touching one adds it to the ammo badge in the top-right. That badge is a blue square with a two-digit count, including 00 before you collect any. You do not need all of them to finish.
-- One silicon chip, on the ground a few steps from the start of Green Hills. The electrons are after it. Collect the chip before the shots will fire. Until then, the run button only runs. Each shot spends one electron. The jump stays at 3.5.
-- You start with 3 lives. The top-left badge is a black square with a red heart and that number. Each half has one pit. Falling in shakes the screen, fades out, costs a life, and fades back in at the start of that half. Electrons you already collected stay collected, and a blob you already removed stays gone. At 0 lives the screen fades back in, says "Game Over", and restarts from the beginning, which clears the ammo, the chip, and the hit count.
+- Eight Grok Blobs (four per half, two of them before each silicon chip), with eyes, a belly, brows, and feet. Stomping one hides it and bounces you. A shot also removes the blob, without the bounce. A side touch knocks you back, shakes the screen, and counts as one hit. Three hits cost one life. You stay where you are, and the hit count resets. There is about a second between hits, so standing on a blob does not count as three.
+- Four Zap Bats (two per half): small winged bots that bob back and forth over a 4-tile loop. Contact works like a blob: stomp it, shoot it, or take a hit.
+- Three Bolt Towers in High Ridge (x=60, 110, 143), spaced so no screen holds two, and bolts live 0.7 s (about 11 tiles), so even when running a bolt from one tower is gone before the next can fire. Once a tower is inside the camera frame (Grok Bot within 9 tiles) it fires a small energy bolt at Grok Bot every 2 seconds (GB Studio Launch Projectile, aimed at the player). A bolt or a touch hurts like a blob's side touch. Stomping a tower hurts like a touch: only electron shots destroy a tower (+500).
+- Score (variable 8) in the top middle, four digits: blob 100, Zap Bat 200, Bolt Tower 500, electron 10, chip 1000, level-clear bonus 1000. The final score is shown with LEVEL 1 CLEAR.
+- Eight electrons. Touching one adds it to the ammo badge in the top-right. That badge is a blue square with a two-digit count, including 00 before you collect any. You do not need all of them to finish.
+- Two silicon chips per half: one on the first low ledge after the opening blobs (Green Hills x=54, High Ridge x=48) and a spare later (x=118 / x=140). Collecting one powers Grok Bot up (`powered` variable 9): the outline glows teal (yellow on a teal body) by swapping sprite palette slot 0. A hit while powered costs the power-up and all electron ammo (the ammo badge drops to 00) instead of a hit: the glow goes, Grok Bot blinks for about a second and cannot be hurt during it. Grab another chip to power up again. The electrons are after the first chip. Collect the chip before the shots will fire. Until then, the run button only runs. Each shot spends one electron. The jump stays at 3.5.
+- You start with 3 lives. The top-left badge is a black square with a red heart and that number. Each half has one pit. Falling in takes away control (blank platformer state, and B is unbound until respawn), Grok Bot visibly drops off the bottom of the screen over about half a second, then the screen fades out, it costs a life (and any power-up), and fades back in at the start of that half. Electrons you already collected stay collected, and a blob you already removed stays gone. At 0 lives the screen fades back in, says "Game Over", and restarts from the beginning, which clears the ammo, the chip, and the hit count.
 - The template song starts again at the beginning of each half.
-- The exit at the end of High Ridge loads a small “Level 1 clear!” scene, then the title.
+- Level complete: a white roadster (a low two-seat electric hypercar silhouette: wedge profile, dark glass canopy, black wheels with gray hubs; original procedural art, no badge, logo or wordmark; `assets/sprites/roadster.png`, Roadster White palette in sprite slot 4) is parked near the end of High Ridge (x=158). Touching it locks movement and unbinds fire, Grok Bot hops in (the player is hidden), the car rolls forward, lifts off and climbs to just under the HUD, then blinks out (GB Studio clamps relative moves at y=0, so it cannot physically leave through the top). The +1000 clear bonus is added, one text box shows "LEVEL 1 CLEAR" with the final score, and a button press goes straight to the title (there is no separate clear scene any more). A 2-tile exit trigger at the very end is kept as a fallback if you jump clean over the car.
 
 Jump feel is set in `project/engine_field_values.gbsres`: jump velocity 3.5, a slightly lower hold-gravity, coyote time, and jump buffering. See `docs/PLATFORMER_PLUS.md`.
 
@@ -44,11 +47,18 @@ Level 1 sheets are in `assets/sprites/`:
 - `silicon_chip.png`
 - `lives.png`
 - `ammo.png`
+- `flyer.png` (Zap Bat, 2 wing frames), `turret.png` (Bolt Tower), `bolt.png` (its projectile)
+- `roadster.png` (32x16 level-complete car)
 
-- `player_grok_square.png` (square-head variant for the picker)
-- `press_start.png` (title text)
+- `player_grok_square.png`, `player_heart.png`, `player_star.png`, `player_triangle.png`, `player_teardrop.png`, `player_oval.png`, `player_blob.png` (picker shapes; indexed PNGs recolored by sprite palette slot 0; contact sheet in `docs/shapes-sheet.png`)
+- `press_start_0.png` .. `press_start_3.png` (title text, one single-frame sheet per strip)
 
-Two of the shapes and four colors from `docs/CHARACTER_SELECTION.md` are in the picker.
+Eight shapes and four colors are in the picker; see `docs/CHARACTER_SELECTION.md`.
+
+### Budgets (per Level 1 scene)
+- Actors: Green Hills 18 / 20, High Ridge 20 / 20 (GB Studio's `MAX_ACTORS`; the 5 pinned HUD actors (lives, ammo, 3 score digits) count). Triggers: 2 / 30. GB Studio only runs actors near the screen, and the generator fails the build if any screen-wide window could put more than 10 hardware sprites on one row, counting the player, one electron shot in flight (fire is capped at one shot per 0.6 s, each living 0.55 s) and, near a Bolt Tower, its bolt (two bolts if two towers are close enough for one bolt to outlive the run between them at 19.2 tiles/s; none are now). The current peak is 10/10.
+- Sprite palettes: 6 / 8 slots (Grok Bot, Blob Red, Electron Blue, Chip Gray, Roadster White, Flyer Violet; the old Coin Gold slot was freed when coins were removed and reused for the roadster). The power-up glow and the picker colors swap slot 0 instead of using new slots.
+- Sprite VRAM (8x16 tiles, before GB Studio removes duplicates): Green Hills 76, High Ridge 84, i.e. 152 / 168 8x8 tiles, including one 8-tile player slot. Color-only mode splits sprite tiles across both VRAM banks.
 
 ## Next Steps
 1. Pull this project on the test computer, open it in GB Studio, and record a normal-speed clear.
