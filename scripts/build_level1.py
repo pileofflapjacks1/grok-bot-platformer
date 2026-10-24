@@ -182,8 +182,8 @@ SEGMENTS = [
 # Levels 2-9. Each is one scene built from short sections, so difficulty is a
 # recipe: later levels use wider pits, higher ledges, more flyers and towers,
 # and float staircases over open pits. Floats are top-only (collision 1), so
-# Grok Bot jumps up through them and lands on top, Mario-style. GB Studio 4.2
-# has no native moving platforms, so there are none.
+# Grok Bot jumps up through them and lands on top, platformer-style. Moving
+# platforms (actor platform flags) were not tried; all floats are static.
 # Sections (letter: width):
 #   F 14 two blobs on the floor     A 14 raised ledge, blob, electron above
 #   B pit (6 floor + pit + 3)       C 16 float staircase (12/9/12), pit from L7
