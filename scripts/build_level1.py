@@ -4562,6 +4562,10 @@ RELEASE_EVERY = 2  # hops between blob releases
 BOSS_STEP = 3  # tiles per hop (24 px): three spots, x = 2, 5, 8
 ROWS_PER_FRAME = 5  # replace-tile writes per frame (half a column)
 P_Y, H_Y = "27", "28"  # stomp test: player and hitbox y (px)
+B_IMM = "29"  # stomp immunity, in 4-frame ticks (counted down by the boss thread)
+B_SHOT_CD = "30"  # 20-frame boss grace after an electron hit (shots only)
+IMM_TICKS = 26  # ~104 frames of rest time; the hop redraw pauses the count
+P_X = "31"  # player x (px) for the stomp knock-off
 BURST_LIFE = 1.2
 ARENA_LEDGES = [(0, 1, 11), (18, 19, 11), (0, 1, 7), (18, 19, 7), (3, 7, 4), (12, 16, 4)]
 MUSE_SKY = "A0B8F0"
@@ -4986,42 +4990,75 @@ def boss_finale(seg: dict) -> list:
     return steps
 
 
-def boss_damage(name: str, seg: dict, stomp: bool) -> list:
-    """HP-1. A stomp first takes the stomp flag (B_INV) and holds the hurt
-    lock at 2, so no hurt path (hitbox side, blobs, sparks) can fire in the
-    same moment, then bounces; both are released after a 20-frame grace."""
-    steps = [set_number(f"{name}-inv", B_INV, 1)]
-    if stomp:
-        steps += [set_number(f"{name}-lock", HURT_LOCK, 2),
-                  event(f"{name}-bounce", "EVENT_PLAYER_BOUNCE", {"height": "high"})]
-    steps += [
+def knock_off(name: str) -> list:
+    """Bounce Grok Bot up and slide him off MUSE toward the nearer side.
+    GB Studio has no horizontal-impulse event, so the player's x is eased
+    toward a target just clear of the hitbox over 6 frames (airborne, so
+    the platformer engine keeps the written position)."""
+    centre = f"{v(B_X)} * 8 + {BOSS_W * 4}"
+    target = (f"({v(P_X)} < {centre}) * max({v(B_X)} * 8 - 18, 0) + "
+              f"({v(P_X)} >= {centre}) * min({v(B_X)} * 8 + {BOSS_W * 8 + 2}, {CLEAR_W * 8 - 16})")
+    steps = [event(f"{name}-bounce", "EVENT_PLAYER_BOUNCE", {"height": "high"}),
+             set_expr(f"{name}-target", "25", target)]
+    for i in range(6):
+        steps += [
+            event(f"{name}-px{i}", "EVENT_ACTOR_GET_POSITION", {"actorId": "player", "vectorX": P_X, "vectorY": "26", "units": "pixels"}),
+            event(f"{name}-mv{i}", "EVENT_ACTOR_SET_POSITION", {
+                "actorId": "player", "x": tile_value(f"{v(P_X)} + ({v('25')} - {v(P_X)}) / {6 - i}"),
+                "y": {"type": "variable", "value": "26"}, "units": "pixels"}),
+            wait_frames(f"{name}-w{i}", 1),
+        ]
+    return steps
+
+
+def player_safe(name: str, body: list) -> list:
+    """Hold the player-safe flag ($16) and the hurt lock (2) for 20 frames
+    around ``body`` (a stomp or a safe bounce), then release both."""
+    return ([set_number(f"{name}-inv", B_INV, 1), set_number(f"{name}-lock", HURT_LOCK, 2)] + body
+            + [wait_frames(f"{name}-grace", 14),
+               if_value(f"{name}-unlock-check", HURT_LOCK, "==", 2, [set_number(f"{name}-unlock", HURT_LOCK, 0)]),
+               set_number(f"{name}-inv-off", B_INV, 0)])
+
+
+def boss_hit(name: str, seg: dict) -> list:
+    """HP-1, pip, sound, score; the defeat when HP reaches 0."""
+    return [
         event(f"{name}-hp", "EVENT_DEC_VALUE", {"variable": B_HP}),
         replace_tile(f"{name}-pip", tile_value(f"{PIP_X0} + {v(B_HP)}"), PIP_Y, PIP_EMPTY),
         beep(f"{name}-sound", 3),
         *add_score(f"{name}-pts", BOSS_KEY, 100),
+        if_value(f"{name}-dead", B_HP, "<=", 0, boss_defeat(f"{name}-defeat", seg)),
     ]
-    release = [wait_frames(f"{name}-grace", 20)]
-    if stomp:
-        release.append(if_value(f"{name}-unlock-check", HURT_LOCK, "==", 2, [set_number(f"{name}-unlock", HURT_LOCK, 0)]))
-    release.append(set_number(f"{name}-inv-off", B_INV, 0))
-    steps.append(if_value(f"{name}-dead", B_HP, "<=", 0, boss_defeat(f"{name}-defeat", seg), release))
-    return steps
+
+
+def boss_damage(name: str, seg: dict, stomp: bool) -> list:
+    """Shot: HP-1 then a 20-frame boss grace on its own variable (it never
+    makes Grok Bot safe). Stomp: player-safe for 20 frames, start the stomp
+    immunity (blinking cheeks), HP-1, knock Grok Bot off MUSE."""
+    if not stomp:
+        return [set_number(f"{name}-cd", B_SHOT_CD, 1), *boss_hit(name, seg),
+                wait_frames(f"{name}-cd-wait", 20), set_number(f"{name}-cd-off", B_SHOT_CD, 0)]
+    return player_safe(name, [set_number(f"{name}-imm", B_IMM, IMM_TICKS), *boss_hit(name, seg), *knock_off(name)])
 
 
 def boss_contact(seg: dict) -> list:
     """Hitbox touched by Grok Bot. Ignored while a hit or stomp is being
-    handled. A stomp needs Grok Bot falling (plat_vel_y > 0) with his
-    position no lower than 8 px under the hitbox's; anything else hurts."""
+    handled. A landing needs Grok Bot falling (plat_vel_y > 0) with his
+    position no lower than 8 px under the hitbox's: it deals damage unless
+    MUSE is stomp-immune, in which case he is just bounced off safely.
+    Anything else hurts."""
     hurt = hurt_steps("boss-touch", seg)
+    landing = [if_value("boss-if-immune", B_IMM, "==", 0, boss_damage("boss-stomp", seg, True),
+                        player_safe("boss-safe", knock_off("boss-safe-knock")))]
     stomp_or_hurt = event("boss-if-falling", "EVENT_IF", {
         "condition": {"type": "gt", "valueA": {"type": "engineField", "value": "plat_vel_y"},
                       "valueB": {"type": "number", "value": 0}},
         "__collapseElse": False,
-    }, {"true": [if_expr("boss-if-high", f"{v(P_Y)} <= {v(H_Y)} + 8", boss_damage("boss-stomp", seg, True), hurt)],
+    }, {"true": [if_expr("boss-if-high", f"{v(P_Y)} <= {v(H_Y)} + 8", landing, hurt)],
         "false": hurt})
     return [unless_done("boss-contact-done", [if_value("boss-contact-live", B_STATE, "==", 1, [
         if_expr("boss-contact-free", f"{v(HURT_LOCK)} == 0 && {v(B_INV)} == 0", [
-            event("boss-py", "EVENT_ACTOR_GET_POSITION", {"actorId": "player", "vectorX": "25", "vectorY": P_Y, "units": "pixels"}),
+            event("boss-py", "EVENT_ACTOR_GET_POSITION", {"actorId": "player", "vectorX": P_X, "vectorY": P_Y, "units": "pixels"}),
             event("boss-hy", "EVENT_ACTOR_GET_POSITION", {"actorId": "$self$", "vectorX": "25", "vectorY": H_Y, "units": "pixels"}),
             stomp_or_hurt,
         ]),
@@ -5030,7 +5067,7 @@ def boss_contact(seg: dict) -> list:
 
 def boss_shot(seg: dict) -> list:
     return [unless_done("boss-shot-done", [if_value("boss-shot-live", B_STATE, "==", 1, [
-        if_value("boss-shot-ready", B_INV, "==", 0, boss_damage("boss-shot", seg, False)),
+        if_value("boss-shot-ready", B_SHOT_CD, "==", 0, boss_damage("boss-shot", seg, False)),
     ])])]
 
 
@@ -5078,8 +5115,22 @@ def boss_loop(seg: dict) -> list:
         # (130 writes) costs ~18 game frames however it is paced. MUSE
         # therefore sits still between hops; this rest comes on top of
         # the ~30-frame redraw, so the gap never drops below its cost.
-        if_value("boss-speed-a", B_HP, ">", 5, [wait_frames("boss-wait-slow", 180)], [
-            if_value("boss-speed-b", B_HP, ">", 2, [wait_frames("boss-wait-mid", 140)], [wait_frames("boss-wait-fast", 110)]),
+        # The rest is counted in 4-frame ticks so the same loop runs the
+        # stomp-immunity countdown and blinks the cheeks while it lasts.
+        set_expr("boss-rest", B_TMP2, f"({v(B_HP)} > 5) * 45 + ({v(B_HP)} <= 5 && {v(B_HP)} > 2) * 35 + ({v(B_HP)} <= 2) * 28"),
+        loop_while("boss-rest-loop", f"{v(B_TMP2)} > 0 && {v(B_STATE)} == 1", [
+            wait_frames("boss-rest-tick", 4),
+            event("boss-rest-dec", "EVENT_DEC_VALUE", {"variable": B_TMP2}),
+            if_value("boss-imm-on", B_IMM, ">", 0, [
+                event("boss-imm-dec", "EVENT_DEC_VALUE", {"variable": B_IMM}),
+                if_expr("boss-imm-blink", f"{v(B_IMM)} % 2 == 1 && {v(B_IMM)} > 0", [
+                    event("boss-blink-off0", "EVENT_ACTOR_HIDE", {"actorId": uid(CHEEKS[0])}),
+                    event("boss-blink-off1", "EVENT_ACTOR_HIDE", {"actorId": uid(CHEEKS[1])}),
+                ], [
+                    event("boss-blink-on0", "EVENT_ACTOR_SHOW", {"actorId": uid(CHEEKS[0])}),
+                    event("boss-blink-on1", "EVENT_ACTOR_SHOW", {"actorId": uid(CHEEKS[1])}),
+                ]),
+            ]),
         ]),
         # Telegraph the next hop: the cheeks blink twice with a low beep.
         if_value("boss-tele-live", B_STATE, "==", 1, [
@@ -5157,6 +5208,8 @@ def boss_init(seg: dict) -> list:
         set_number("boss-state0", B_STATE, 0),
         set_number("boss-show0", B_SHOW, 1),
         set_number("boss-inv0", B_INV, 0),
+        set_number("boss-imm0", B_IMM, 0),
+        set_number("boss-shotcd0", B_SHOT_CD, 0),
         set_number("boss-burst0", B_BURST, 1),
         set_number("boss-release0", B_RELEASE, 4),
         set_number("boss-blob0-free", B_BLOB[0], 0),

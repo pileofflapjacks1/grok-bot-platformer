@@ -56,11 +56,19 @@ overflow 10 sprites/line).
 
 ## Stomp rules
 The hitbox's On Hit Player script ignores contact while $5 (hurt lock) or
-$16 (stomp/shot flag) is set. A stomp needs plat_vel_y > 0 and the player's
-Y no lower than 8 px below the hitbox Y: it sets $16 = 1 and $5 = 2 first,
-then bounces, HP-1 and score, waits 20 frames and clears both. Sparks and
-blob hurt paths only run while $16 == 0. HP resets to 8 on a fresh visit;
-a respawn reload (3 hits) deliberately keeps the damage already done.
+$16 (player-safe) is set. A landing needs plat_vel_y > 0 and the player's
+Y no lower than 8 px below the hitbox Y.
+- MUSE not immune: HP-1, then MUSE is stomp-immune ($29) for 26 rest
+  ticks of 4 frames (~104 frames plus any hop redraw), with blinking cheeks.
+- MUSE immune: no damage, no hurt; Grok Bot is just bounced off.
+- Either way Grok Bot bounces high and is slid off toward the nearer side,
+  clear of the hitbox (GB Studio has no horizontal-impulse event, so x is
+  eased over 6 airborne frames), and is player-safe ($16 = 1, $5 = 2) for
+  20 frames.
+- Electron hits use their own 20-frame boss grace ($30); they never make
+  Grok Bot safe from sparks or blobs.
+HP resets to 8 on a fresh visit; a respawn reload (3 hits) deliberately
+keeps the damage already done.
 
 ## Budgets / GBC notes
 - Levels 2-9: 11 BG tiles each, scanline peak 10/10.
@@ -72,12 +80,13 @@ a respawn reload (3 hits) deliberately keeps the damage already done.
 - MUSE moves in 24 px hops between three spots, and tears for ~30 frames
   while it redraws each hop.
 - The boss fight still runs at ~88-91% speed (PyBoy measurement).
-- Stomps can be chained: a player bouncing on MUSE lands on it again about
-  every 27 frames, so 8 chained stomps beat it in ~4 s.
+- Stomp-only win takes ~32 s in PyBoy (1 HP per immunity window). Shots
+  are faster: 4+ electrons at a 20-frame grace can take several HP in a
+  couple of seconds, so a perfect mixed run is roughly 8-10 s.
 - Released blobs walk after spawning and can wander into the boss sprite
   (blobs do not collide with the boss).
-- Shooting MUSE also sets $16, so for 20 frames after a shot sparks and
-  blobs cannot hurt Grok Bot.
+- The immunity blink is cheeks-only (blinking the BG-tile body would cost
+  ~100 tile writes per blink); it pauses during a hop redraw.
 - One defeat flash; score saturates. Moving platforms not used.
 - Tests used PyBoy with memory writes to place Grok Bot above MUSE (then a
   real fall); not tested on hardware.
