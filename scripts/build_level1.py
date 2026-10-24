@@ -4549,8 +4549,8 @@ B_X, B_DIR, B_HP, B_BURST, B_COL, B_INV, B_RELEASE, B_TMP, B_STATE, B_SHOW = (
     "11", "12", "13", "14", "15", "16", "17", "18", "19", "20")
 B_BLOB = ("21", "22")
 B_TMP2 = "23"
-BURST_EVERY = 14  # boss steps between electron bursts (~3 s)
-RELEASE_EVERY = 20  # boss steps between blob releases
+BURST_EVERY = 6  # boss steps between electron bursts (~3-4 s)
+RELEASE_EVERY = 9  # boss steps between blob releases
 BURST_LIFE = 1.2
 ARENA_LEDGES = [(0, 1, 11), (18, 19, 11), (0, 1, 7), (18, 19, 7), (3, 7, 4), (12, 16, 4)]
 MUSE_SKY = "A0B8F0"
@@ -4784,21 +4784,32 @@ def v(var: str) -> str:
 
 
 def draw_boss(name: str, full: bool = False) -> list:
-    """Redraw band columns around B_X (or the whole band when full).
+    """Redraw MUSE at B_X: the 10 body columns plus a sky column each side.
 
-    B_SHOW 0 draws sky everywhere (used for the defeat flash)."""
-    bc = f"({v(B_COL)} - {v(B_X)})"
-    start = str(BAND_X0) if full else f"max({v(B_X)} - 1, {BAND_X0})"
-    end = str(BAND_X1) if full else f"min({v(B_X)} + {BOSS_W}, {BAND_X1})"
-    body = []
-    for r in range(BOSS_H):
-        expr = (f"{v(B_SHOW)} * ({bc} >= 0 && {bc} <= {BOSS_W - 1}) * "
-                f"({v(B_DIR)} * {TS_FACE} + {r * TS_W} + {bc} + 1)")
-        body.append(replace_tile(f"{name}-r{r}", {"type": "variable", "value": B_COL}, BAND_Y0 + r, tile_value(expr)))
-    body.append(event(f"{name}-col-inc", "EVENT_INC_VALUE", {"variable": B_COL}))
-    return [
-        set_expr(f"{name}-col0", B_COL, start),
-        set_expr(f"{name}-end", B_TMP2, end),
+    Speed matters: every tile write stalls the whole game loop (sprites and
+    Grok Bot freeze while the VM works), so each write uses the cheapest
+    expression possible: a per-column base tile in B_TMP plus a constant
+    row offset. ``full`` is kept for callers; the band outside the body is
+    already sky. Hide the boss with wipe_band() instead."""
+    body = [replace_tile(f"{name}-r{r}", {"type": "variable", "value": B_COL}, BAND_Y0 + r,
+                         tile_value(f"{v(B_TMP)} + {r * TS_W}")) for r in range(BOSS_H)]
+    body += [event(f"{name}-col-inc", "EVENT_INC_VALUE", {"variable": B_COL}),
+             event(f"{name}-base-inc", "EVENT_INC_VALUE", {"variable": B_TMP}),
+             # GBVM only runs the game loop (physics, sprites, input) once
+             # every script is waiting, so a long redraw would freeze the
+             # game. Yield one frame per column: the redraw spreads over
+             # ~11 frames (brief tearing) and everything else keeps moving.
+             wait_frames(f"{name}-yield", 1)]
+    # Only the trailing column needs clearing: B_DIR is the direction of the
+    # step just taken (1 = left, so the old right edge is left behind).
+    cells = [replace_tile(f"{name}-sky{r}", {"type": "variable", "value": B_COL}, BAND_Y0 + r, 0)
+             for r in range(BOSS_H)]
+    sky = [set_expr(f"{name}-sky-col", B_COL, f"{v(B_X)} - 1 + {v(B_DIR)} * {BOSS_W + 1}"),
+           if_expr(f"{name}-sky-in", f"{v(B_COL)} >= {BAND_X0} && {v(B_COL)} <= {BAND_X1}", cells)]
+    return sky + [
+        set_expr(f"{name}-col0", B_COL, f"max({v(B_X)}, {BAND_X0})"),
+        set_expr(f"{name}-base0", B_TMP, f"{v(B_DIR)} * {TS_FACE} + {v(B_COL)} - {v(B_X)} + 1"),
+        set_expr(f"{name}-end", B_TMP2, f"min({v(B_X)} + {BOSS_W - 1}, {BAND_X1})"),
         loop_while(f"{name}-cols", f"{v(B_COL)} <= {v(B_TMP2)}", body),
     ]
 
@@ -4966,9 +4977,9 @@ def boss_blob_kill(tag: str, k: int, bounce: bool) -> list:
     steps += [
         *add_score(f"{tag}", BOSS_KEY, POINTS["blob"]),
         # The drop: an electron appears where the blob was (adds to ammo).
-        event(f"{tag}-where", "EVENT_ACTOR_GET_POSITION", {"actorId": "$self$", "vectorX": B_TMP, "vectorY": B_TMP2, "units": "tiles"}),
+        event(f"{tag}-where", "EVENT_ACTOR_GET_POSITION", {"actorId": "$self$", "vectorX": "25", "vectorY": "26", "units": "tiles"}),
         event(f"{tag}-drop-pos", "EVENT_ACTOR_SET_POSITION", {
-            "actorId": drop, "x": {"type": "variable", "value": B_TMP},
+            "actorId": drop, "x": {"type": "variable", "value": "25"},
             "y": {"type": "number", "value": FLOOR_TOP - 3}, "units": "tiles"}),
         event(f"{tag}-drop-on", "EVENT_ACTOR_ACTIVATE", {"actorId": drop}),
         event(f"{tag}-drop-show", "EVENT_ACTOR_SHOW", {"actorId": drop}),
@@ -4993,8 +5004,8 @@ def boss_blob_contact(k: int, seg: dict) -> list:
 def boss_loop(seg: dict) -> list:
     """The boss thread: enter from the right, then patrol, burst, release."""
     step_wait = [
-        if_value("boss-speed-a", B_HP, ">", 5, [wait_frames("boss-wait-slow", 10)], [
-            if_value("boss-speed-b", B_HP, ">", 2, [wait_frames("boss-wait-mid", 6)], [wait_frames("boss-wait-fast", 3)]),
+        if_value("boss-speed-a", B_HP, ">", 5, [wait_frames("boss-wait-slow", 30)], [
+            if_value("boss-speed-b", B_HP, ">", 2, [wait_frames("boss-wait-mid", 18)], [wait_frames("boss-wait-fast", 10)]),
         ]),
     ]
     entering = [
@@ -5002,7 +5013,7 @@ def boss_loop(seg: dict) -> list:
         *draw_boss("boss-enter-draw"),
         *place_boss("boss-enter-place"),
         beep("boss-enter-stomp", 1),
-        wait_frames("boss-enter-wait", 12),
+        wait_frames("boss-enter-wait", 6),
         if_value("boss-cheeks-in", B_X, "==", BAND_X1 - BOSS_W + 3, [
             event("boss-cheek0-show", "EVENT_ACTOR_SHOW", {"actorId": uid(CHEEKS[0])}),
             event("boss-cheek1-show", "EVENT_ACTOR_SHOW", {"actorId": uid(CHEEKS[1])}),
@@ -5012,13 +5023,15 @@ def boss_loop(seg: dict) -> list:
     fighting = [
         if_value("boss-dir", B_DIR, "==", 1, [
             event("boss-left", "EVENT_DEC_VALUE", {"variable": B_X}),
-            if_value("boss-left-end", B_X, "<=", BOSS_MIN_X, [set_number("boss-turn-r", B_DIR, 0)]),
         ], [
             event("boss-right", "EVENT_INC_VALUE", {"variable": B_X}),
-            if_value("boss-right-end", B_X, ">=", BOSS_MAX_X, [set_number("boss-turn-l", B_DIR, 1)]),
         ]),
         *draw_boss("boss-draw"),
         *place_boss("boss-place"),
+        # Turn after drawing, so draw_boss saw the direction of this step;
+        # the next step redraws every body column in the new facing.
+        if_value("boss-left-end", B_X, "<=", BOSS_MIN_X, [set_number("boss-turn-r", B_DIR, 0)]),
+        if_value("boss-right-end", B_X, ">=", BOSS_MAX_X, [set_number("boss-turn-l", B_DIR, 1)]),
         event("boss-burst-tick", "EVENT_DEC_VALUE", {"variable": B_BURST}),
         if_value("boss-burst-now", B_BURST, "<=", 0, [
             *boss_burst("boss-burst"),
@@ -5054,8 +5067,8 @@ def boss_init(seg: dict) -> list:
         set_number("boss-state0", B_STATE, 0),
         set_number("boss-show0", B_SHOW, 1),
         set_number("boss-inv0", B_INV, 0),
-        set_number("boss-burst0", B_BURST, BURST_EVERY // 2),
-        set_number("boss-release0", B_RELEASE, RELEASE_EVERY // 2),
+        set_number("boss-burst0", B_BURST, 3),
+        set_number("boss-release0", B_RELEASE, 6),
         set_number("boss-blob0-free", B_BLOB[0], 0),
         set_number("boss-blob1-free", B_BLOB[1], 0),
         if_value("boss-hp-sane", B_HP, "<=", 0, [set_number("boss-hp0", B_HP, BOSS_HP)]),
