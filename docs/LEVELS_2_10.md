@@ -90,3 +90,69 @@ keeps the damage already done.
 - One defeat flash; score saturates. Moving platforms not used.
 - Tests used PyBoy with memory writes to place Grok Bot above MUSE (then a
   real fall); not tested on hardware.
+
+## v4 (after Joe's Chromatic hardware playtest of v3) — PyBoy-only, untested on hardware
+
+All numbers below are from PyBoy 2 (CGB mode), not from hardware.
+
+### Speed (game loops per 600 emulated frames, running right with jumps, hurt lock held so the run is not interrupted by deaths/fades)
+
+| Level | main a0ed867 | v3 8e776d3 | v4 |
+|---|---|---|---|
+| 1 | 596 (99.3%) | 596 (99.3%) | 596 (99.3%) |
+| 2 | – | 583 (97.2%) | 583 (97.2%) |
+| 5 | – | 596 (99.3%) | 596 (99.3%) |
+| 9 | – | 594 (99.0%) | 594 (99.0%) |
+| 10 boss (running) | – | 520 (86.7%) | 593 (98.8%) |
+| 10 boss (idle) | – | 520 (86.7%) | 589 (98.2%) |
+
+Metric: a hook on `_state_update` counts game-loop passes per emulated frame
+(game_time is not reliable). Levels 1-9 match a0ed867 level 1 in PyBoy; the
+level 1 scenes are identical to a0ed867 except the ending script. The only
+real CPU problem PyBoy shows was the boss (BG tile writes). Frames lost
+without the hurt lock come from hurt/death fades (by design).
+
+### Music
+- Cause found: every level scene re-issued Play Music, and gbvm's
+  `vm_music_play` always re-inits the driver, so the song restarted at
+  Level 1, at High Ridge, and at every new level. Fix: the title starts the
+  track and sets var 32 (MUSIC_VAR); level scenes only start it if var 32
+  is 0. Verified by hooking `_vm_music_play`: v3 = 4 starts on title → L1 →
+  High Ridge → L2 → respawn; v4 = 1 (title only).
+- Sound effects are all legacy beeps with mute mask 8 (channel 4, noise),
+  priority minimal; they never cut the melody channels 1-2.
+- The music ISR runs at a constant 4.28 calls per frame on every build and
+  level, so it is not starved by CPU load (PyBoy).
+
+### Chip rule
+Firing needs the chip collected in the current level and not lost since:
+- New game, every new level (2-9) and a respawn after a death: chip 0,
+  ammo 0, unpowered.
+- A hit while powered clears power, ammo and chip (so chip == glow).
+- Moving from Green Hills to High Ridge (same level) keeps it.
+- The debug warp no longer grants the chip.
+- Boss arena exception: chip is set on entry; ammo from blobs is the only
+  rule (and at least 4 electrons on entry).
+v3 bug: the chip lasted "for the run" (across levels, after a hit and after
+a death), and the debug warp set it, so Grok Bot could fire with no glow.
+
+### Sprite MUSE (fluid movement)
+Options considered:
+- (a) sprite-built MUSE — chosen. 48x64 metasprite actor, 22 hardware
+  sprites (empty corner tiles dropped), at most 6 per row. The pink cheeks
+  are two tiles inside the body sprite that use the Muse Pink palette
+  (cream/pink/dark), so there are no separate cheek actors; blinking
+  swaps to frame 1 (no cheeks). Moved 1 px/frame (2 px/frame at HP ≤ 2)
+  with Set Position every frame, between three spots 48 px apart. Measured:
+  B_X advances 1 px on almost every frame (two 1-frame hitches per 48 px walk).
+- (b) smooth BG scroll of a locked arena: rejected. MUSE would have to be
+  the only thing on the BG layer, so the floor/ledges and HUD would need to
+  be sprites or a window/LYC split; GB Studio 4.2.2 has no event for per-
+  scanline scroll, so it needs engine code.
+- (c) keep BG tiles with a 1-tile step: still ~1/7 frame per tile write.
+Behaviours kept: contact damage, stomp with immunity and knock-off, safe
+bounce, 3-spark staggered bursts, blob releases next to the body, ammo
+drops, HP hearts, defeat flash and win screen.
+OAM budget: HUD 8 + MUSE 22 + player 2 + sparks 3 = 35; with 2 blobs or
+drops on screen as well it can reach the 40-sprite limit, and the last
+actors drawn may be dropped for a frame (not seen in PyBoy tests).

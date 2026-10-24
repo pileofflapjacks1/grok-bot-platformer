@@ -302,6 +302,7 @@ def build_level(level: int, index: int) -> dict:
         "bg_file": f"level{level}.png",
         "index": index,
         "reset": False,
+        "level_start": True,
         "width": width,
         "parallax": LEVEL_PARALLAX,
         "play_row": LEVEL_PLAY_ROW,
@@ -2206,6 +2207,7 @@ def lose_power(name: str, segment: dict) -> list:
     return [
         set_number(f"{name}-unpower", POWER_VAR, 0),
         set_number(f"{name}-unpower-ammo", "0", 0),
+        set_number(f"{name}-unpower-chip", "2", 0),
         show_ammo(f"{name}-unpower-ammo-hud", f"actor_ammo_{segment['key']}"),
         *player_palette_events(f"{name}-unpower-pal"),
         beep(f"{name}-unpower-sound", 3),
@@ -2445,7 +2447,7 @@ def electron_script(name: str, ammo_symbol: str) -> list:
 
 
 def chip_script(name: str) -> list:
-    # The chip unlocks firing for the run (var 2) and powers Grok Bot up
+    # The chip unlocks firing (var 2) until the next hit, death or new level, and powers Grok Bot up
     # (var 9): the outline glows until the next hit. It does not change the jump.
     return [
         set_number(f"{name}-flag", "2", 1),
@@ -2806,13 +2808,32 @@ def segment_init(segment: dict) -> list:
     # the track that is already playing restarts it. The game has one track
     # and never stops it, so a respawn reload (var 10 == 1) skips the event and
     # the song carries on.
+    # v4: the title starts the one looping track and sets MUSIC_VAR; level
+    # scenes only start it if it somehow is not playing yet, so the song runs
+    # continuously from the title through every level change and respawn.
     script = [
-        if_value(f"{key}-music-check", RESPAWN_VAR, "==", 0, [event(
+        if_value(f"{key}-music-check", MUSIC_VAR, "==", 0, [event(
             f"{key}-music",
             "EVENT_MUSIC_PLAY",
             {"musicId": MUSIC_ID, "loop": True},
-        )])
+        ), set_number(f"{key}-music-on", MUSIC_VAR, 1)])
     ]
+    # Chip rule (v4): firing needs the chip collected in THIS level and not
+    # lost since. A new level (2-9) starts with chip 0, ammo 0, unpowered; a
+    # respawn after a death starts the same way; a hit while powered clears
+    # the chip with the power and ammo (lose_power). The boss arena sets
+    # chip 1 itself: there, ammo from blobs is the only rule.
+    if segment.get("level_start"):
+        script.append(if_value(f"{key}-level-arm-reset", RESPAWN_VAR, "==", 0, [
+            set_number(f"{key}-level-chip0", "2", 0),
+            set_number(f"{key}-level-ammo0", "0", 0),
+            set_number(f"{key}-level-power0", POWER_VAR, 0),
+        ]))
+    script.append(if_value(f"{key}-respawn-arm-reset", RESPAWN_VAR, "==", 1, [
+        set_number(f"{key}-respawn-chip0", "2", 0),
+        set_number(f"{key}-respawn-ammo0", "0", 0),
+        set_number(f"{key}-respawn-power0", POWER_VAR, 0),
+    ]))
     if segment["reset"]:
         script.append(if_value(f"{key}-new-run", RESPAWN_VAR, "==", 0, [
                 set_number(f"{key}-electrons", "0", 0),
@@ -2956,6 +2977,7 @@ def build_images() -> dict:
     write_png(ROOT / "assets" / "tilesets" / "muse_tiles.png", TS_W * 8, (2 * BOSS_H + 1) * 8, paint_muse_tileset())
     write_png(sprites / "muse_cheek.png", 16, 16, paint_cheek())
     write_png(sprites / "muse_hitbox.png", 16, 16, blank(16, 16, CLEAR))
+    write_png(sprites / "muse_body.png", 2 * MUSE_W, MUSE_H, paint_muse_sprite())
     write_png(sprites / "muse_spark.png", 16, 16, paint_spark())
     for key, painter in menu_painters:
         image, menu_collisions, menu_colors = painter()
@@ -3527,11 +3549,17 @@ def build_resources(collisions: dict) -> None:
         animations=[{"id": uid("hitbox-anim0"), "frames": [{"id": uid("hitbox-f0"), "tiles": []}]}]
         + [empty_frame(f"hitbox-anim{i}") for i in range(1, 8)],
         num_tiles=0, bounds=(2, 4, BOSS_W * 8 - 4, BOSS_H * 8 - 4)))
+    write_json(sprites / "muse_body.png.gbsres", sprite_resource(
+        name="muse_body", symbol="sprite_muse_body", filename="muse_body.png",
+        image_path=sprites / "muse_body.png", width=2 * MUSE_W, height=MUSE_H, animation_type="fixed",
+        animations=muse_sprite_animations(), num_tiles=2 * len(MUSE_TILES),
+        canvas_width=MUSE_W, canvas_height=MUSE_H, bounds=MUSE_BOUNDS))
     for name, colors in (
+        ("Muse Body S", sprite_palette("FFF4E0", "E0C090", "584030")),
         ("Muse Arena", [MUSE_SKY, "68D070", "289038", "183028"]),
         ("Muse Body", [MUSE_SKY, "FFF4E0", "E0C090", "584030"]),
         ("Muse HP", [MUSE_SKY, "F8A0C0", "D04878", "302030"]),
-        ("Muse Pink", sprite_palette("F8A8C8", "E07898", "302030")),
+        ("Muse Pink", sprite_palette("FFF4E0", "F8A0C0", "584030")),
     ):
         write_json(palettes / f"{name.lower().replace(' ', '_')}.gbsres", palette(name, colors))
     for segment in SEGMENTS:
@@ -3841,10 +3869,12 @@ def title_script() -> list:
             beep("title-warp-beep", 8),
         ]),
         event("title-music", "EVENT_MUSIC_PLAY", {"musicId": MUSIC_ID, "loop": True}),
+        set_number("title-music-on", MUSIC_VAR, 1),
     ]
 
 
 WARP_VAR = "24"
+MUSIC_VAR = "32"
 
 
 def warp_events() -> list:
@@ -3854,7 +3884,6 @@ def warp_events() -> list:
     for level in range(10, 1, -1):
         chain = [if_value(f"pick-warp-{level}", WARP_VAR, "==", level - 1, [
             *reset_run(f"pick-warp-{level}-reset"),
-            set_number(f"pick-warp-{level}-chip", "2", 1),
             set_number(f"pick-warp-{level}-clear", WARP_VAR, 0),
             switch_scene(f"pick-warp-{level}-go", level_symbol(level), start_x, start_y),
         ], chain)]
@@ -4303,7 +4332,7 @@ GB Studio reads every `.png` in this folder. The Level 1 sheets below are 16x16,
 | player_blob.png | Same style, irregular blob (shape 7). |
 | enemy_red_blob.png | Grok Blob. Two frames, cream eyes, black pupils, belly, brows, and feet. |
 | electron.png | Electron pickup and the projectile Grok Bot fires. |
-| silicon_chip.png | One power-up. Collecting it unlocks firing for the rest of the run. |
+| silicon_chip.png | One power-up. Collecting it unlocks firing until the next hit, death or level change (boss arena: ammo only). |
 | lives.png | Four frames. Each frame is a black badge with a heart and a digit, 0 through 3. The pinned actor shows the frame that matches `lives`. |
 | ammo.png | One frame per electron count, from 0 up. Each frame is a blue badge with two digits. The pinned actor shows the frame that matches `electrons`. |
 | flyer.png | Zap Bat, a small winged bot. Two frames, wings up and down. |
@@ -4692,6 +4721,56 @@ def paint_muse_tileset() -> list[list[tuple[int, int, int, int]]]:
     return image
 
 
+def paint_muse_sprite() -> list[list[tuple[int, int, int, int]]]:
+    """96x64 sheet: two 48x64 frames of sprite MUSE (cheeks on, cheeks off).
+
+    The 80x80 BG art (paint_muse) resampled to 48x64. Cream/beige/dark map
+    to the sprite light/mid/dark slots of Muse Body S. The two 8x16 tiles
+    holding the cheeks use Muse Pink (cream, pink, dark): any beige fur in
+    those tiles is repainted cream so only the cheeks show pink.
+    Fills MUSE_TILES with the non-empty (col, row, slot) tiles."""
+    art = paint_muse(True)
+    small = [[art[min(79, int((y + 0.5) * 80 / MUSE_H))][min(79, int((x + 0.5) * 80 / MUSE_W))]
+              for x in range(MUSE_W)] for y in range(MUSE_H)]
+    # Cheeks: soft ovals under the eyes (eye dots land near x 20 and 29).
+    cheeks = set()
+    for cx in (17, 34):
+        for y in range(39, 43):
+            for x in range(cx - 2, cx + 3):
+                if ((x - cx) / 2.6) ** 2 + ((y - 40.5) / 1.9) ** 2 <= 1.0:
+                    cheeks.add((x, y))
+    pink_tiles = {(x // 8, y // 16) for x, y in cheeks}
+    colour = {1: WHITE, 2: GRAY, 3: BLACK}
+    image = blank(2 * MUSE_W, MUSE_H, CLEAR)
+    for f in range(2):
+        for y in range(MUSE_H):
+            for x in range(MUSE_W):
+                c = small[y][x]
+                if not c:
+                    continue
+                tile = (x // 8, y // 16)
+                if tile in pink_tiles:
+                    c = 2 if (f == 0 and (x, y) in cheeks) else (1 if c == 2 else c)
+                image[y][f * MUSE_W + x] = colour[c]
+    MUSE_TILES.clear()
+    for r in range(MUSE_H // 16):
+        for c in range(MUSE_W // 8):
+            if any(small[y][x] for y in range(r * 16, r * 16 + 16) for x in range(c * 8, c * 8 + 8)):
+                MUSE_TILES.append((c, r, MUSE_PINK_SLOT if (c, r) in pink_tiles else MUSE_SLOT))
+    return image
+
+
+def muse_sprite_animations() -> list[dict]:
+    def tiles(f):
+        return [{
+            "id": uid(f"muse-f{f}-t{c}-{r}"), "x": c * 8 - (MUSE_W // 2 - 8), "y": (MUSE_H // 16 - 1 - r) * 16,
+            "sliceX": f * MUSE_W + c * 8, "sliceY": r * 16, "flipX": False, "flipY": False,
+            "palette": 0, "paletteIndex": slot, "objPalette": "OBP0", "priority": False,
+        } for c, r, slot in MUSE_TILES]
+    frames = [{"id": uid(f"muse-f{f}"), "tiles": tiles(f)} for f in range(2)]
+    return [{"id": uid("muse-anim0"), "frames": frames}] + [empty_frame(f"muse-anim{i}") for i in range(1, 8)]
+
+
 def paint_cheek() -> list[list[tuple[int, int, int, int]]]:
     """16x16, one 8x16 column used: a soft pink oval at x 1..6, y 6..9."""
     image = blank(16, 16, CLEAR)
@@ -4746,21 +4825,7 @@ def paint_arena():
         for tx in range(x0, x1 + 1):
             put_tile(tx, row, float_tile())
             collisions[row * w + tx] = 1
-    # Boss band: unique placeholder tiles (bit patterns), redrawn at init.
-    index = 0
-    for ty in range(BAND_Y0, BAND_Y0 + BOSS_H):
-        for tx in range(BAND_X0, BAND_X1 + 1):
-            tile = [[SKY] * 8 for _ in range(8)]
-            # GB Studio's CGB tile packer also merges X/Y-flipped twins, so
-            # every placeholder carries a corner marker (bottom-left) that
-            # no flip can match; the bits make each one distinct.
-            for bit in range(8):
-                tile[0][bit] = GRASS_L if (index >> bit) & 1 else SKY
-                tile[1][bit] = SKY if (index >> bit) & 1 else GRASS_L
-            tile[7][0] = OUTLINE
-            put_tile(tx, ty, tile)
-            colors[ty * w + tx] = 2
-            index += 1
+    # v4: no boss band; MUSE is a sprite actor.
     # Name label (palette 0, dark) right-aligned before the pips.
     name_x = (PIP_X0 - 1 - len(BOSS_NAME)) * 8
     draw_text(image, name_x, PIP_Y * 8, BOSS_NAME, OUTLINE)
@@ -4811,41 +4876,6 @@ def v(var: str) -> str:
     return f"${var}$"
 
 
-def draw_boss(name: str, full: bool = False) -> list:
-    """Redraw MUSE at B_X after a BOSS_STEP step in direction B_DIR.
-
-    Every tile write runs while the game loop waits (GBVM only runs physics
-    and sprites once every script is waiting), so writes are capped at
-    ROWS_PER_FRAME (half a column) between one-frame waits. A full redraw
-    of 10 columns plus the 2 trailing sky columns costs 24 frames; the
-    step wait in boss_loop comes on top, so the gap between steps can never
-    be shorter than the redraw. ``full`` is kept for callers."""
-    def half(prefix, col, tile_of, rows):
-        return [replace_tile(f"{prefix}-r{r}", col, BAND_Y0 + r, tile_of(r)) for r in rows]
-    top, bottom = range(0, ROWS_PER_FRAME), range(ROWS_PER_FRAME, BOSS_H)
-    colv = {"type": "variable", "value": B_COL}
-    tile = lambda r: tile_value(f"{v(B_TMP)} + {r * TS_W}")
-    body = (half(f"{name}-a", colv, tile, top) + [wait_frames(f"{name}-ya", 1)]
-            + half(f"{name}-b", colv, tile, bottom)
-            + [event(f"{name}-col-inc", "EVENT_INC_VALUE", {"variable": B_COL}),
-               event(f"{name}-base-inc", "EVENT_INC_VALUE", {"variable": B_TMP}),
-               wait_frames(f"{name}-yb", 1)])
-    # Trailing sky columns: B_DIR is the direction of the step just taken
-    # (1 = left: the old right edge BX+10..BX+11 is left behind).
-    sky = []
-    for j in range(BOSS_STEP):
-        cells = (half(f"{name}-s{j}a", colv, lambda r: 0, top) + [wait_frames(f"{name}-s{j}ya", 1)]
-                 + half(f"{name}-s{j}b", colv, lambda r: 0, bottom) + [wait_frames(f"{name}-s{j}yb", 1)])
-        sky += [set_expr(f"{name}-sky{j}-col", B_COL, f"{v(B_X)} - {BOSS_STEP - j} + {v(B_DIR)} * {BOSS_W + BOSS_STEP}"),
-                if_expr(f"{name}-sky{j}-in", f"{v(B_COL)} >= {BAND_X0} && {v(B_COL)} <= {BAND_X1}", cells)]
-    return sky + [
-        set_expr(f"{name}-col0", B_COL, f"max({v(B_X)}, {BAND_X0})"),
-        set_expr(f"{name}-base0", B_TMP, f"{v(B_DIR)} * {TS_FACE} + {v(B_COL)} - {v(B_X)} + 1"),
-        set_expr(f"{name}-end", B_TMP2, f"min({v(B_X)} + {BOSS_W - 1}, {BAND_X1})"),
-        loop_while(f"{name}-cols", f"{v(B_COL)} <= {v(B_TMP2)}", body),
-    ]
-
-
 def draw_pips(name: str) -> list:
     return [
         replace_tile(f"{name}-pip{k}", PIP_X0 + k, PIP_Y,
@@ -4854,23 +4884,29 @@ def draw_pips(name: str) -> list:
     ]
 
 
-HITBOX = "actor_boss-hitbox"
-CHEEKS = ("actor_boss-cheek1", "actor_boss-cheek2")
+HITBOX = "actor_boss-hitbox"  # v4: the MUSE sprite actor itself (body + hitbox)
 BOSS_BLOBS = ("actor_boss-blob1", "actor_boss-blob2")
 BOSS_DROPS = ("actor_boss-drop1", "actor_boss-drop2")
+# v4 sprite MUSE: a 48x64 metasprite actor moved by whole pixels every frame.
+MUSE_W, MUSE_H = 48, 64
+MUSE_Y = FLOOR_TOP * 8 - 16           # actor y (px): 16 px base on the floor
+MUSE_BOUNDS = (-14, -44, 44, 58)      # x, y (down), w, h from the base top-left
+MUSE_SPOTS = (24, 72, 120)            # actor x (px); body spans x-16 .. x+32
+MUSE_ENTRY = 152                      # walks in from the right edge
+MUSE_STEP = MUSE_SPOTS[1] - MUSE_SPOTS[0]
+MUSE_TILES: list = []                 # (col, row, palette slot) filled by paint_muse_sprite
+MUSE_SLOT, MUSE_PINK_SLOT = 5, 6
+
+
+def set_muse_frame(name: str, frame: int) -> dict:
+    return event(name, "EVENT_ACTOR_SET_FRAME", {"actorId": uid(HITBOX), "frame": {"type": "number", "value": frame}})
 
 
 def place_boss(name: str) -> list:
-    """Move the hitbox and cheeks to the boss position and facing."""
-    steps = [event(f"{name}-hitbox", "EVENT_ACTOR_SET_POSITION", {
+    """Put the MUSE actor at (B_X, MUSE_Y) px."""
+    return [event(f"{name}-muse", "EVENT_ACTOR_SET_POSITION", {
         "actorId": uid(HITBOX), "x": {"type": "variable", "value": B_X},
-        "y": {"type": "number", "value": BAND_Y0 + 1}, "units": "tiles"})]
-    for side, (symbol, x0) in enumerate(zip(CHEEKS, (26, 52))):
-        steps.append(event(f"{name}-cheek{side}", "EVENT_ACTOR_SET_POSITION", {
-            "actorId": uid(symbol),
-            "x": tile_value(f"{v(B_X)} * 8 + {x0 - 1} - 4 * {v(B_DIR)}"),
-            "y": {"type": "number", "value": CHEEK_Y_PX}, "units": "pixels"}))
-    return steps
+        "y": {"type": "number", "value": MUSE_Y}, "units": "pixels"})]
 
 
 def boss_segment() -> dict:
@@ -4880,8 +4916,8 @@ def boss_segment() -> dict:
     }
 
 
-SPARK_X = {"left": 0, "right": BOSS_W * 8 - 8}
-SPARK_Y = (-24, -32, -40)  # staggered rows, all well below the HUD band
+SPARK_X = {"left": -16, "right": 24}
+SPARK_Y = (-56, -64, -72)  # above MUSE's head, staggered, below the HUD band
 
 
 def launch_spark(name: str, angle: int, x: int, y: int) -> dict:
@@ -4908,14 +4944,13 @@ def boss_burst(name: str) -> list:
     return [
         beep(f"{name}-sound", 9),
         event(f"{name}-side", "EVENT_IF_ACTOR_RELATIVE_TO_ACTOR", {
-            "actorId": "player", "operation": "left", "otherActorId": uid(CHEEKS[0]), "__collapseElse": False,
+            "actorId": "player", "operation": "left", "otherActorId": uid(HITBOX), "__collapseElse": False,
         }, {"true": left, "false": right}),
     ]
 
 
 def boss_release(name: str) -> list:
-    """Let out one Grok Blob at the boss edge facing Grok Bot (outside the
-    hitbox, so it never spawns overlapping the boss), if one is free."""
+    """Let out one Grok Blob just outside MUSE's body on Grok Bot's side."""
     def release(k: int) -> list:
         sym = uid(BOSS_BLOBS[k])
         def put(tag, expr):
@@ -4925,9 +4960,9 @@ def boss_release(name: str) -> list:
         return [
             set_number(f"{name}-b{k}-busy", B_BLOB[k], 1),
             event(f"{name}-b{k}-side", "EVENT_IF_ACTOR_RELATIVE_TO_ACTOR", {
-                "actorId": "player", "operation": "left", "otherActorId": uid(CHEEKS[0]), "__collapseElse": False,
-            }, {"true": [put("l", f"max({v(B_X)} - 2, 0)")],
-                "false": [put("r", f"min({v(B_X)} + {BOSS_W}, {CLEAR_W - 2})")]}),
+                "actorId": "player", "operation": "left", "otherActorId": uid(HITBOX), "__collapseElse": False,
+            }, {"true": [put("l", f"max(({v(B_X)} - 16) / 8 - 2, 0)")],
+                "false": [put("r", f"min(({v(B_X)} + 32) / 8, {CLEAR_W - 2})")]}),
             event(f"{name}-b{k}-on", "EVENT_ACTOR_ACTIVATE", {"actorId": sym}),
             event(f"{name}-b{k}-show", "EVENT_ACTOR_SHOW", {"actorId": sym}),
             event(f"{name}-b{k}-col", "EVENT_ACTOR_COLLISIONS_ENABLE", {"actorId": sym}),
@@ -4938,9 +4973,8 @@ def boss_release(name: str) -> list:
 
 
 def boss_defeat(name: str, seg: dict) -> list:
-    """Hit handler side of the defeat: freeze the fight at once. The flash
-    and the switch to the win scene run in the boss thread (boss_finale),
-    the only script that redraws the band, so two loops never share B_COL."""
+    """Hit handler side of the defeat: freeze the fight at once; the flash
+    and the switch to the win scene run in the boss thread (boss_finale)."""
     steps = [
         set_number(f"{name}-state", B_STATE, 2),
         set_number(f"{name}-done", LEVEL_DONE, 1),
@@ -4950,54 +4984,34 @@ def boss_defeat(name: str, seg: dict) -> list:
         steps += [
             event(f"{name}-blob{k}-off", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(BOSS_BLOBS[k])}),
             event(f"{name}-drop{k}-off", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(BOSS_DROPS[k])}),
-            event(f"{name}-cheek{k}-off", "EVENT_ACTOR_HIDE", {"actorId": uid(CHEEKS[k])}),
         ]
-    return steps + [beep(f"{name}-boom", 1)]
-
-
-def wipe_band(name: str, paced: bool = False) -> list:
-    """Every band cell back to sky, unrolled (no shared loop vars). Scene
-    init uses it unpaced while the screen is dark; ``paced`` adds a frame
-    wait every ROWS_PER_FRAME writes for use during play."""
-    out = []
-    for c in range(BAND_X0, BAND_X1 + 1):
-        for r in range(BOSS_H):
-            out.append(replace_tile(f"{name}-{c}-{r}", c, BAND_Y0 + r, 0))
-            if paced and (r + 1) % ROWS_PER_FRAME == 0:
-                out.append(wait_frames(f"{name}-{c}-{r}-y", 1))
-    return out
+    return steps + [set_muse_frame(f"{name}-cheeks-off", 1), beep(f"{name}-boom", 1)]
 
 
 def boss_finale(seg: dict) -> list:
-    # One flash (looped redraws are slow), then MUSE pops out of existence.
     name = "boss-finale"
-    steps = [
-        # Hide the cheeks again: a hop telegraph cut short by the defeat
-        # may have shown them after boss_defeat hid them.
-        event(f"{name}-cheek0-off", "EVENT_ACTOR_HIDE", {"actorId": uid(CHEEKS[0])}),
-        event(f"{name}-cheek1-off", "EVENT_ACTOR_HIDE", {"actorId": uid(CHEEKS[1])}),
+    hide = lambda t: event(f"{name}-{t}", "EVENT_ACTOR_HIDE", {"actorId": uid(HITBOX)})
+    show = lambda t: event(f"{name}-{t}", "EVENT_ACTOR_SHOW", {"actorId": uid(HITBOX)})
+    return [
+        event(f"{name}-nocol", "EVENT_ACTOR_COLLISIONS_DISABLE", {"actorId": uid(HITBOX)}),
+        set_muse_frame(f"{name}-cheeks-off", 1),
         shake(f"{name}-shake", 0.5, 5),
-        *wipe_band(f"{name}-off", True),
-        wait_frames(f"{name}-w0", 10),
-        set_number(f"{name}-show", B_SHOW, 1), *draw_boss(f"{name}-on"),
-        wait_frames(f"{name}-w1", 10),
-        set_number(f"{name}-gone", B_SHOW, 0), *wipe_band(f"{name}-final", True),
+        *[e for i in range(3) for e in (hide(f"off{i}"), wait_frames(f"{name}-w{i}a", 8),
+                                        show(f"on{i}"), wait_frames(f"{name}-w{i}b", 8))],
+        hide("gone"),
         beep(f"{name}-win", 10),
         *add_score(f"{name}-bonus", BOSS_KEY, POINTS["clear"]),
         event(f"{name}-text", "EVENT_TEXT", {"text": f"{BOSS_NAME} DEFEATED!\nSCORE ${SCORE_VAR}$"}),
         switch_scene(f"{name}-to-win", WIN_SCENE, *MENU_PLAYER),
     ]
-    return steps
 
 
 def knock_off(name: str) -> list:
-    """Bounce Grok Bot up and slide him off MUSE toward the nearer side.
-    GB Studio has no horizontal-impulse event, so the player's x is eased
-    toward a target just clear of the hitbox over 6 frames (airborne, so
-    the platformer engine keeps the written position)."""
-    centre = f"{v(B_X)} * 8 + {BOSS_W * 4}"
-    target = (f"({v(P_X)} < {centre}) * max({v(B_X)} * 8 - 18, 0) + "
-              f"({v(P_X)} >= {centre}) * min({v(B_X)} * 8 + {BOSS_W * 8 + 2}, {CLEAR_W * 8 - 16})")
+    """Bounce Grok Bot up and ease his x to just clear of MUSE's body on the
+    nearer side over 6 frames (airborne, so the engine keeps the position)."""
+    centre = f"{v(B_X)} + 8"
+    target = (f"({v(P_X)} < {centre}) * max({v(B_X)} - 16 - 18, 0) + "
+              f"({v(P_X)} >= {centre}) * min({v(B_X)} + 32 + 2, {CLEAR_W * 8 - 16})")
     steps = [event(f"{name}-bounce", "EVENT_PLAYER_BOUNCE", {"height": "high"}),
              set_expr(f"{name}-target", "25", target)]
     for i in range(6):
@@ -5032,21 +5046,19 @@ def boss_hit(name: str, seg: dict) -> list:
 
 
 def boss_damage(name: str, seg: dict, stomp: bool) -> list:
-    """Shot: HP-1 then a 20-frame boss grace on its own variable (it never
-    makes Grok Bot safe). Stomp: player-safe for 20 frames, start the stomp
-    immunity (blinking cheeks), HP-1, knock Grok Bot off MUSE."""
     if not stomp:
         return [set_number(f"{name}-cd", B_SHOT_CD, 1), *boss_hit(name, seg),
                 wait_frames(f"{name}-cd-wait", 20), set_number(f"{name}-cd-off", B_SHOT_CD, 0)]
     return player_safe(name, [set_number(f"{name}-imm", B_IMM, IMM_TICKS), *boss_hit(name, seg), *knock_off(name)])
 
 
+STOMP_DY = MUSE_BOUNDS[1] + 4  # player base top at most 4 px under the hitbox top
+
+
 def boss_contact(seg: dict) -> list:
-    """Hitbox touched by Grok Bot. Ignored while a hit or stomp is being
-    handled. A landing needs Grok Bot falling (plat_vel_y > 0) with his
-    position no lower than 8 px under the hitbox's: it deals damage unless
-    MUSE is stomp-immune, in which case he is just bounced off safely.
-    Anything else hurts."""
+    """MUSE touched by Grok Bot. A landing (falling, feet near the top of
+    the hitbox) deals damage unless MUSE is stomp-immune (then a safe
+    bounce); anything else hurts."""
     hurt = hurt_steps("boss-touch", seg)
     landing = [if_value("boss-if-immune", B_IMM, "==", 0, boss_damage("boss-stomp", seg, True),
                         player_safe("boss-safe", knock_off("boss-safe-knock")))]
@@ -5054,7 +5066,7 @@ def boss_contact(seg: dict) -> list:
         "condition": {"type": "gt", "valueA": {"type": "engineField", "value": "plat_vel_y"},
                       "valueB": {"type": "number", "value": 0}},
         "__collapseElse": False,
-    }, {"true": [if_expr("boss-if-high", f"{v(P_Y)} <= {v(H_Y)} + 8", landing, hurt)],
+    }, {"true": [if_expr("boss-if-high", f"{v(P_Y)} <= {v(H_Y)} + ({STOMP_DY})", landing, hurt)],
         "false": hurt})
     return [unless_done("boss-contact-done", [if_value("boss-contact-live", B_STATE, "==", 1, [
         if_expr("boss-contact-free", f"{v(HURT_LOCK)} == 0 && {v(B_INV)} == 0", [
@@ -5082,7 +5094,6 @@ def boss_blob_kill(tag: str, k: int, bounce: bool) -> list:
         steps.append(event(f"{tag}-bounce", "EVENT_PLAYER_BOUNCE", {"height": "medium"}))
     steps += [
         *add_score(f"{tag}", BOSS_KEY, POINTS["blob"]),
-        # The drop: an electron appears where the blob was (adds to ammo).
         event(f"{tag}-where", "EVENT_ACTOR_GET_POSITION", {"actorId": "$self$", "vectorX": "25", "vectorY": "26", "units": "tiles"}),
         event(f"{tag}-drop-pos", "EVENT_ACTOR_SET_POSITION", {
             "actorId": drop, "x": {"type": "variable", "value": "25"},
@@ -5108,82 +5119,78 @@ def boss_blob_contact(k: int, seg: dict) -> list:
     }, {"true": boss_blob_kill(f"{tag}-above", k, True), "false": [falling]})])]
 
 
+def imm_tick(name: str) -> list:
+    """One 4-frame tick of stomp immunity: count down and blink the cheeks."""
+    return [if_value(f"{name}-imm-on", B_IMM, ">", 0, [
+        event(f"{name}-imm-dec", "EVENT_DEC_VALUE", {"variable": B_IMM}),
+        if_expr(f"{name}-imm-blink", f"{v(B_IMM)} % 2 == 1", [set_muse_frame(f"{name}-blink-off", 1)],
+                [set_muse_frame(f"{name}-blink-on", 0)]),
+    ])]
+
+
+def muse_walk(name: str) -> list:
+    """Walk smoothly from B_X to B_COL: whole pixels every frame (speed B_TMP
+    px/frame), 4 frames per loop pass plus one immunity tick. All targets
+    are multiples of 8 px from the start, so 1 or 2 px steps land exactly."""
+    step = []
+    for i in range(4):
+        step += [
+            set_expr(f"{name}-x{i}", B_X, f"{v(B_X)} + (1 - 2 * {v(B_DIR)}) * {v(B_TMP)}"),
+            *place_boss(f"{name}-p{i}"),
+            wait_frames(f"{name}-w{i}", 1),
+        ]
+    return [
+        if_value(f"{name}-dir", B_DIR, "==", 1,
+                 [event(f"{name}-face-l", "EVENT_ACTOR_SET_DIRECTION", {"actorId": uid(HITBOX), "direction": {"type": "direction", "value": "left"}})],
+                 [event(f"{name}-face-r", "EVENT_ACTOR_SET_DIRECTION", {"actorId": uid(HITBOX), "direction": {"type": "direction", "value": "right"}})]),
+        loop_while(f"{name}-loop", f"{v(B_X)} != {v(B_COL)} && {v(B_STATE)} != 2", step + imm_tick(name)),
+    ]
+
+
 def boss_loop(seg: dict) -> list:
-    """The boss thread: enter from the right, then patrol, burst, release."""
-    step_wait = [
-        # Each tile write costs ~1/7 of a frame (VRAM-safe copy), so a hop
-        # (130 writes) costs ~18 game frames however it is paced. MUSE
-        # therefore sits still between hops; this rest comes on top of
-        # the ~30-frame redraw, so the gap never drops below its cost.
-        # The rest is counted in 4-frame ticks so the same loop runs the
-        # stomp-immunity countdown and blinks the cheeks while it lasts.
-        set_expr("boss-rest", B_TMP2, f"({v(B_HP)} > 5) * 45 + ({v(B_HP)} <= 5 && {v(B_HP)} > 2) * 35 + ({v(B_HP)} <= 2) * 28"),
+    """The boss thread: walk in from the right, then patrol between three
+    spots; at each spot: burst, maybe release a blob, rest, telegraph."""
+    rest = [
+        set_expr("boss-rest", B_TMP2, f"({v(B_HP)} > 5) * 30 + ({v(B_HP)} <= 5 && {v(B_HP)} > 2) * 22 + ({v(B_HP)} <= 2) * 15"),
         loop_while("boss-rest-loop", f"{v(B_TMP2)} > 0 && {v(B_STATE)} == 1", [
             wait_frames("boss-rest-tick", 4),
             event("boss-rest-dec", "EVENT_DEC_VALUE", {"variable": B_TMP2}),
-            if_value("boss-imm-on", B_IMM, ">", 0, [
-                event("boss-imm-dec", "EVENT_DEC_VALUE", {"variable": B_IMM}),
-                if_expr("boss-imm-blink", f"{v(B_IMM)} % 2 == 1 && {v(B_IMM)} > 0", [
-                    event("boss-blink-off0", "EVENT_ACTOR_HIDE", {"actorId": uid(CHEEKS[0])}),
-                    event("boss-blink-off1", "EVENT_ACTOR_HIDE", {"actorId": uid(CHEEKS[1])}),
-                ], [
-                    event("boss-blink-on0", "EVENT_ACTOR_SHOW", {"actorId": uid(CHEEKS[0])}),
-                    event("boss-blink-on1", "EVENT_ACTOR_SHOW", {"actorId": uid(CHEEKS[1])}),
-                ]),
-            ]),
+            *imm_tick("boss-rest"),
         ]),
-        # Telegraph the next hop: the cheeks blink twice with a low beep.
+        # Telegraph the next walk: the cheeks blink twice with a low beep.
         if_value("boss-tele-live", B_STATE, "==", 1, [
             beep("boss-tele-beep", 1),
             *[e for i in range(2) for e in (
-                event(f"boss-tele-off{i}-0", "EVENT_ACTOR_HIDE", {"actorId": uid(CHEEKS[0])}),
-                event(f"boss-tele-off{i}-1", "EVENT_ACTOR_HIDE", {"actorId": uid(CHEEKS[1])}),
-                wait_frames(f"boss-tele-w{i}a", 6),
-                event(f"boss-tele-on{i}-0", "EVENT_ACTOR_SHOW", {"actorId": uid(CHEEKS[0])}),
-                event(f"boss-tele-on{i}-1", "EVENT_ACTOR_SHOW", {"actorId": uid(CHEEKS[1])}),
-                wait_frames(f"boss-tele-w{i}b", 6))],
+                set_muse_frame(f"boss-tele-off{i}", 1), wait_frames(f"boss-tele-w{i}a", 6),
+                set_muse_frame(f"boss-tele-on{i}", 0), wait_frames(f"boss-tele-w{i}b", 6))],
         ]),
     ]
     entering = [
-        set_expr("boss-enter-step", B_X, f"{v(B_X)} - {BOSS_STEP}"),
-        *draw_boss("boss-enter-draw"),
-        *place_boss("boss-enter-place"),
+        set_number("boss-enter-speed", B_TMP, 1),
+        set_number("boss-enter-target", B_COL, MUSE_SPOTS[-1]),
+        *muse_walk("boss-enter"),
         beep("boss-enter-stomp", 1),
-        wait_frames("boss-enter-wait", 6),
-        if_value("boss-cheeks-in", B_X, "==", BOSS_MAX_X + BOSS_STEP, [
-            event("boss-cheek0-show", "EVENT_ACTOR_SHOW", {"actorId": uid(CHEEKS[0])}),
-            event("boss-cheek1-show", "EVENT_ACTOR_SHOW", {"actorId": uid(CHEEKS[1])}),
-        ]),
-        if_value("boss-entered", B_X, "<=", BOSS_MAX_X, [set_number("boss-fight", B_STATE, 1)]),
-    ]
-    # Everything after the redraw; skipped if MUSE was beaten mid-redraw.
-    fight_tail = [
-        *place_boss("boss-place"),
-        # Turn after drawing, so draw_boss saw the direction of this step;
-        # the next step redraws every body column in the new facing.
-        if_value("boss-left-end", B_X, "<=", BOSS_MIN_X, [set_number("boss-turn-r", B_DIR, 0)]),
-        if_value("boss-right-end", B_X, ">=", BOSS_MAX_X, [set_number("boss-turn-l", B_DIR, 1)]),
-        event("boss-burst-tick", "EVENT_DEC_VALUE", {"variable": B_BURST}),
-        if_expr("boss-burst-now", f"{v(B_BURST)} <= 0 && {v(B_STATE)} == 1", [
-            *boss_burst("boss-burst"),
-            set_number("boss-burst-reset", B_BURST, BURST_EVERY),
-        ]),
-        event("boss-release-tick", "EVENT_DEC_VALUE", {"variable": B_RELEASE}),
-        if_expr("boss-release-now", f"{v(B_RELEASE)} <= 0 && {v(B_STATE)} == 1", [
-            *boss_release("boss-release"),
-            set_number("boss-release-reset", B_RELEASE, RELEASE_EVERY),
-        ]),
-        *step_wait,
+        set_number("boss-fight", B_STATE, 1),
     ]
     fighting = [
-        if_value("boss-dir", B_DIR, "==", 1, [
-            set_expr("boss-left", B_X, f"{v(B_X)} - {BOSS_STEP}"),
-        ], [
-            set_expr("boss-right", B_X, f"{v(B_X)} + {BOSS_STEP}"),
+        if_value("boss-left-end", B_X, "<=", MUSE_SPOTS[0], [set_number("boss-turn-r", B_DIR, 0)]),
+        if_value("boss-right-end", B_X, ">=", MUSE_SPOTS[-1], [set_number("boss-turn-l", B_DIR, 1)]),
+        set_expr("boss-target", B_COL, f"{v(B_X)} + (1 - 2 * {v(B_DIR)}) * {MUSE_STEP}"),
+        set_expr("boss-speed", B_TMP, f"1 + ({v(B_HP)} <= 2)"),
+        *muse_walk("boss-walk"),
+        if_value("boss-still-live", B_STATE, "==", 1, [
+            event("boss-burst-tick", "EVENT_DEC_VALUE", {"variable": B_BURST}),
+            if_expr("boss-burst-now", f"{v(B_BURST)} <= 0 && {v(B_STATE)} == 1", [
+                *boss_burst("boss-burst"),
+                set_number("boss-burst-reset", B_BURST, BURST_EVERY),
+            ]),
+            event("boss-release-tick", "EVENT_DEC_VALUE", {"variable": B_RELEASE}),
+            if_expr("boss-release-now", f"{v(B_RELEASE)} <= 0 && {v(B_STATE)} == 1", [
+                *boss_release("boss-release"),
+                set_number("boss-release-reset", B_RELEASE, RELEASE_EVERY),
+            ]),
+            *rest,
         ]),
-        *draw_boss("boss-draw"),
-        # Defeated mid-redraw (B_STATE 2): skip the rest of the step.
-        if_value("boss-still-live", B_STATE, "==", 1, fight_tail),
     ]
     return [loop_while("boss-loop", f"{v(B_STATE)} != 2", [
         if_value("boss-is-entering", B_STATE, "==", 0, entering, [
@@ -5198,12 +5205,12 @@ def boss_init(seg: dict) -> list:
     script = [if_value("boss-hp-fresh", RESPAWN_VAR, "==", 0, [set_number("boss-hp-full", B_HP, BOSS_HP)])]
     script += segment_init(seg)
     script += [
-        # Firing works in the arena even after a debug warp or a reload,
-        # and Grok Bot walks in with at least 4 electrons.
+        # Boss rule: no chip needed in the arena; ammo (from blobs) is the
+        # only limit. Grok Bot walks in with at least 4 electrons.
         set_number("boss-chip", "2", 1),
         if_value("boss-ammo-min", "0", "<", 4, [set_number("boss-ammo4", "0", 4)]),
         show_counter("boss-ammo-hud", f"actor_ammo_{BOSS_KEY}", "0"),
-        set_number("boss-x", B_X, BOSS_ENTRY_X),
+        set_number("boss-x", B_X, MUSE_ENTRY),
         set_number("boss-dir0", B_DIR, 1),
         set_number("boss-state0", B_STATE, 0),
         set_number("boss-show0", B_SHOW, 1),
@@ -5211,25 +5218,18 @@ def boss_init(seg: dict) -> list:
         set_number("boss-imm0", B_IMM, 0),
         set_number("boss-shotcd0", B_SHOT_CD, 0),
         set_number("boss-burst0", B_BURST, 1),
-        set_number("boss-release0", B_RELEASE, 4),
+        set_number("boss-release0", B_RELEASE, 2),
         set_number("boss-blob0-free", B_BLOB[0], 0),
         set_number("boss-blob1-free", B_BLOB[1], 0),
         if_value("boss-hp-sane", B_HP, "<=", 0, [set_number("boss-hp0", B_HP, BOSS_HP)]),
+        set_muse_frame("boss-cheeks0", 0),
     ]
     for k in range(2):
         script += [
             event(f"boss-init-blob{k}", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(BOSS_BLOBS[k])}),
             event(f"boss-init-drop{k}", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(BOSS_DROPS[k])}),
-            event(f"boss-init-cheek{k}", "EVENT_ACTOR_HIDE", {"actorId": uid(CHEEKS[k])}),
-            # The engine reports only the first overlapping actor, so the
-            # decorative cheeks must not shadow the hitbox.
-            event(f"boss-init-cheek{k}-nocol", "EVENT_ACTOR_COLLISIONS_DISABLE", {"actorId": uid(CHEEKS[k])}),
         ]
-    # Wipe the placeholder band to sky (B_SHOW 0) while the screen is dark,
-    # draw the HP pips, and park the hitbox and cheeks.
     script += [
-        # Unrolled (no loop) so it finishes before the fade-in.
-        *wipe_band("boss-wipe"),
         *draw_pips("boss-pips"),
         *place_boss("boss-park"),
         event("boss-thread", "EVENT_THREAD_START", {"variable": "T1", "__scriptTabs": "true"}, {"true": boss_loop(seg)}),
@@ -5245,7 +5245,7 @@ def write_boss(painted: dict, bg_ids: list[str], sprite_ids: list[str]) -> None:
     actor_dir = level_dir / "actors"
     delete_gbsres(actor_dir)
     delete_gbsres(level_dir / "triggers")
-    boss_sprites = sprite_ids[:6] + [uid("palette-Muse Pink"), sprite_ids[7]]
+    boss_sprites = sprite_ids[:5] + [uid("palette-Muse Body S"), uid("palette-Muse Pink"), sprite_ids[7]]
     boss_bg = [uid("palette-Muse Arena"), uid("palette-Far Hills"), uid("palette-Muse Body"), uid("palette-Muse HP")] + bg_ids[4:]
     index = len(SEGMENTS) + 2 + len(BOOT_SCREENS)
     write_json(level_dir / "scene.gbsres", scene(
@@ -5270,12 +5270,9 @@ def write_boss(painted: dict, bg_ids: list[str], sprite_ids: list[str]) -> None:
     for offset, (tag, _place, sprite) in enumerate(SCORE_DIGITS):
         add(f"score_{tag}.gbsres", name=f"Score {tag}", symbol=f"actor_score_{tag}_{key}", x=SCORE_AT + offset, y=HUD_ROW,
             sprite_symbol=sprite, palette_name="Electron Blue", script=[], animate=False, pinned=True, collision_group="")
-    add("hitbox.gbsres", name=f"{BOSS_NAME} Hitbox", symbol=HITBOX, x=BOSS_ENTRY_X, y=BAND_Y0 + 1,
-        sprite_symbol="sprite_muse_hitbox", palette_name="Grok Bot", script=boss_contact(seg),
+    add("hitbox.gbsres", name=f"{BOSS_NAME}", symbol=HITBOX, x=MUSE_ENTRY // 8, y=MUSE_Y // 8,
+        sprite_symbol="sprite_muse_body", palette_name="Muse Body S", script=boss_contact(seg),
         hit1_script=boss_shot(seg), animate=False, collision_group="1")
-    for k, symbol in enumerate(CHEEKS):
-        add(f"cheek_{k + 1}.gbsres", name=f"{BOSS_NAME} Cheek {k + 1}", symbol=symbol, x=BOSS_ENTRY_X + 1, y=12,
-            sprite_symbol="sprite_muse_cheek", palette_name="Muse Pink", script=[], animate=False, collision_group="")
     for k, symbol in enumerate(BOSS_BLOBS):
         add(f"blob_{k + 1}.gbsres", name=f"Released Blob {k + 1}", symbol=symbol, x=6 + 6 * k, y=FLOOR_TOP - 2,
             sprite_symbol="sprite_enemy_red_blob", palette_name="Blob Red", script=boss_blob_contact(k, seg),
@@ -5317,7 +5314,9 @@ def boss_scanline_note() -> str:
     # Mid screen worst case: cheeks 2 (one tile each), player 2, player shot
     # 2, sparks are one tile each, launched 5 frames apart on rows 8 px
     # apart, so at most 2 share a line: 8.
-    return "boss arena: HUD rows 10/10; mid screen worst case 8 (one-tile sparks, staggered)"
+    # v4 sprite MUSE: <= 6 tiles per row (cheeks are inside the body
+    # sprite), player 2, a spark 1, a player shot 1-2: <= 10 on MUSE's rows.
+    return f"boss arena: HUD rows 10/10; sprite MUSE {MUSE_W}x{MUSE_H} = {len(MUSE_TILES)} OAM tiles, <= 6 per row"
 
 
 def main() -> None:

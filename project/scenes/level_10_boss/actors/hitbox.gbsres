@@ -4,14 +4,14 @@
   "_index": 5,
   "symbol": "actor_boss_hitbox",
   "prefabId": "",
-  "name": "MUSE Hitbox",
+  "name": "MUSE",
   "coordinateType": "tiles",
-  "x": 20,
-  "y": 6,
+  "x": 19,
+  "y": 13,
   "frame": 0,
   "animate": false,
-  "spriteSheetId": "28bcd1fe-488a-582b-ad69-f04551a0afb8",
-  "paletteId": "af2740b1-3780-5ae9-a09a-6b75f3d278a6",
+  "spriteSheetId": "415e8dd1-9536-53f7-bba5-b53d59cc81ba",
+  "paletteId": "8b532bae-1966-5ca8-a746-e914b50632d7",
   "direction": "right",
   "moveSpeed": 1,
   "animSpeed": 255,
@@ -100,7 +100,7 @@
                               "args": {
                                 "condition": {
                                   "type": "expression",
-                                  "value": "$27$ <= $28$ + 8"
+                                  "value": "$27$ <= $28$ + (-40)"
                                 },
                                 "__collapseElse": false
                               },
@@ -364,13 +364,6 @@
                                                 }
                                               },
                                               {
-                                                "id": "5cf8b3e2-ff1a-53bb-b8a5-de0281804764",
-                                                "command": "EVENT_ACTOR_HIDE",
-                                                "args": {
-                                                  "actorId": "f898e043-e211-5d71-ab8c-6818995174a4"
-                                                }
-                                              },
-                                              {
                                                 "id": "e71dac81-6d9a-50ba-be39-d14bd67d691f",
                                                 "command": "EVENT_ACTOR_DEACTIVATE",
                                                 "args": {
@@ -385,10 +378,14 @@
                                                 }
                                               },
                                               {
-                                                "id": "0a6c3ce2-014e-50ac-8adc-49767d5838cc",
-                                                "command": "EVENT_ACTOR_HIDE",
+                                                "id": "452dfd93-b2a2-59a8-8a59-14e54938ba22",
+                                                "command": "EVENT_ACTOR_SET_FRAME",
                                                 "args": {
-                                                  "actorId": "ab534d9f-8d11-5665-9775-8afd23a01cdd"
+                                                  "actorId": "930a5d6a-84f4-557a-8bfb-70a53509d015",
+                                                  "frame": {
+                                                    "type": "number",
+                                                    "value": 1
+                                                  }
                                                 }
                                               },
                                               {
@@ -420,7 +417,7 @@
                                             "variable": "25",
                                             "value": {
                                               "type": "expression",
-                                              "value": "($31$ < $11$ * 8 + 40) * max($11$ * 8 - 18, 0) + ($31$ >= $11$ * 8 + 40) * min($11$ * 8 + 82, 144)"
+                                              "value": "($31$ < $11$ + 8) * max($11$ - 16 - 18, 0) + ($31$ >= $11$ + 8) * min($11$ + 32 + 2, 144)"
                                             }
                                           }
                                         },
@@ -759,7 +756,7 @@
                                             "variable": "25",
                                             "value": {
                                               "type": "expression",
-                                              "value": "($31$ < $11$ * 8 + 40) * max($11$ * 8 - 18, 0) + ($31$ >= $11$ * 8 + 40) * min($11$ * 8 + 82, 144)"
+                                              "value": "($31$ < $11$ + 8) * max($11$ - 16 - 18, 0) + ($31$ >= $11$ + 8) * min($11$ + 32 + 2, 144)"
                                             }
                                           }
                                         },
@@ -1143,6 +1140,17 @@
                                                             "command": "EVENT_SET_VALUE",
                                                             "args": {
                                                               "variable": "0",
+                                                              "value": {
+                                                                "type": "number",
+                                                                "value": 0
+                                                              }
+                                                            }
+                                                          },
+                                                          {
+                                                            "id": "6cdf3867-a01b-5340-8bdb-7e4343ef8f84",
+                                                            "command": "EVENT_SET_VALUE",
+                                                            "args": {
+                                                              "variable": "2",
                                                               "value": {
                                                                 "type": "number",
                                                                 "value": 0
@@ -3081,6 +3089,17 @@
                                                       "command": "EVENT_SET_VALUE",
                                                       "args": {
                                                         "variable": "0",
+                                                        "value": {
+                                                          "type": "number",
+                                                          "value": 0
+                                                        }
+                                                      }
+                                                    },
+                                                    {
+                                                      "id": "6cdf3867-a01b-5340-8bdb-7e4343ef8f84",
+                                                      "command": "EVENT_SET_VALUE",
+                                                      "args": {
+                                                        "variable": "2",
                                                         "value": {
                                                           "type": "number",
                                                           "value": 0
@@ -5211,13 +5230,6 @@
                               }
                             },
                             {
-                              "id": "5d56a77b-b705-598e-9d43-79818c98a6a4",
-                              "command": "EVENT_ACTOR_HIDE",
-                              "args": {
-                                "actorId": "f898e043-e211-5d71-ab8c-6818995174a4"
-                              }
-                            },
-                            {
                               "id": "98353a0e-95ba-50ea-8a3a-ea71055fc5a8",
                               "command": "EVENT_ACTOR_DEACTIVATE",
                               "args": {
@@ -5232,10 +5244,14 @@
                               }
                             },
                             {
-                              "id": "d8ec492a-969a-5759-ae62-3b82dd15d6a3",
-                              "command": "EVENT_ACTOR_HIDE",
+                              "id": "c5c873c4-5888-5eab-9a8a-c37c4ba8b6cc",
+                              "command": "EVENT_ACTOR_SET_FRAME",
                               "args": {
-                                "actorId": "ab534d9f-8d11-5665-9775-8afd23a01cdd"
+                                "actorId": "930a5d6a-84f4-557a-8bfb-70a53509d015",
+                                "frame": {
+                                  "type": "number",
+                                  "value": 1
+                                }
                               }
                             },
                             {
