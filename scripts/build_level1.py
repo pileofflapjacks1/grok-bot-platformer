@@ -112,6 +112,18 @@ def world_x(index: int) -> int:
     return 80 + index * (SEG_W * 8 + SCENE_GAP)
 
 
+def seg_w(segment: dict) -> int:
+    """Scene width in tiles (Level 1 halves are SEG_W; later levels set their own)."""
+    return segment.get("width", SEG_W)
+
+
+# Ammo badge cap. It was electron_total() when Level 1 was the whole game
+# (8); it stays 8 so the badge keeps its 9 frames now that ammo carries over
+# ten levels.
+AMMO_MAX = 8
+HUD_ACTORS = 2 + 3  # lives, ammo, three score digits
+
+
 # A 16px actor standing on a surface uses y = top - 2.
 # Electrons sit in the air so each one is its own hop.
 # Per scene GB Studio keeps at most 20 actors (MAX_ACTORS in src/consts.ts;
@@ -132,6 +144,7 @@ SEGMENTS = [
         "raised": [(20, 32, 12), (48, 58, 13), (90, 108, 12), (124, 140, 11), (150, 162, 13)],
         "pits": [(70, 72)],
         "blobs": [(12, 13), (26, 10), (40, 13), (99, 10)],
+        "level": 1,
         "chips": [(54, 11), (118, 13)],
         "electrons": [(60, 10), (88, 8), (94, 7), (104, 6), (146, 8)],
         "flyers": [(80, 9), (132, 7)],
@@ -150,6 +163,8 @@ SEGMENTS = [
         "raised": [(16, 30, 12), (42, 54, 13), (74, 88, 12), (108, 122, 11), (136, 150, 13)],
         "pits": [(62, 64)],
         "blobs": [(10, 13), (23, 10), (36, 13), (81, 10)],
+        "level": 1,
+        "clear_to": "scene_level2",
         "chips": [(48, 11), (140, 11)],
         "electrons": [(52, 8), (78, 7), (146, 8)],
         "flyers": [(70, 9), (128, 8)],
@@ -162,7 +177,169 @@ SEGMENTS = [
         "next": None,
     },
 ]
-HUD_ACTORS = 2 + 3  # lives, ammo, three score digits
+
+# ---------------------------------------------------------------------------
+# Levels 2-9. Each is one scene built from short sections, so difficulty is a
+# recipe: later levels use wider pits, higher ledges, more flyers and towers,
+# and float staircases over open pits. Floats are top-only (collision 1), so
+# Grok Bot jumps up through them and lands on top, Mario-style. GB Studio 4.2
+# has no native moving platforms, so there are none.
+# Sections (letter: width):
+#   F 14 two blobs on the floor     A 14 raised ledge, blob, electron above
+#   B pit (6 floor + pit + 3)       C 16 float staircase (12/9/12), pit from L7
+#   D 12 flyer lane                 E 12 bolt tower on a low ledge
+# Every level opens with F then the chip (the validator wants two blobs before
+# the chip and electrons after it) and ends on 14 tiles of floor with a flag.
+LEVEL_NAMES = {
+    2: "Sky Steps",
+    3: "Bolt Bluffs",
+    4: "Sunset Run",
+    5: "Amber Ridge",
+    6: "Ember Hills",
+    7: "Dusk Heights",
+    8: "Violet Peaks",
+    9: "Last Climb",
+}
+LEVEL_RECIPES = {
+    2: "FACDBA",
+    3: "FABCDAEB",
+    4: "FABCDEABF",
+    5: "FABDCEBAFD",
+    6: "FABCEDBAF",
+    7: "FBCAEBCDF",
+    8: "FBCEABCDFA",
+    9: "FCBECBADFE",
+}
+# Background themes: (ground palette, far palette). Image tiles are shared;
+# only the palette changes, so a theme costs no VRAM.
+LEVEL_THEMES = {
+    1: ("Green Hills", "Far Hills"),
+    2: ("Green Hills", "Far Hills"),
+    3: ("Green Hills", "Far Hills"),
+    4: ("Sunset Hills", "Sunset Far"),
+    5: ("Sunset Hills", "Sunset Far"),
+    6: ("Sunset Hills", "Sunset Far"),
+    7: ("Dusk Hills", "Dusk Far"),
+    8: ("Dusk Hills", "Dusk Far"),
+    9: ("Dusk Hills", "Dusk Far"),
+}
+THEME_COLORS = {
+    "Sunset Hills": ["F8D0A0", "88C858", "387830", "302018"],
+    "Sunset Far": ["F8D0A0", "F8F0D8", "E08878", "804058"],
+    "Dusk Hills": ["A8A8E8", "58B878", "286848", "181830"],
+    "Dusk Far": ["A8A8E8", "E0E0F8", "7070C0", "383070"],
+}
+# New levels scroll rows 0-2 slowly, rows 3-4 a bit faster and the rest with
+# the camera, so floats can sit as high as row 5.
+LEVEL_PARALLAX = [
+    {"height": 3, "speed": 4},
+    {"height": 2, "speed": 2},
+    {"height": 0, "speed": 0},
+]
+LEVEL_PLAY_ROW = 5
+LEVEL_TAIL = 14
+
+
+def level_symbol(level: int) -> str:
+    return f"scene_level{level}"
+
+
+def build_level(level: int, index: int) -> dict:
+    pit_w = 2 if level <= 3 else 3 if level <= 6 else 4
+    ledge = 13 if level <= 3 else 12 if level <= 6 else 11
+    raised, pits, floats = [], [], []
+    blobs, electrons, flyers, turret, chips = [], [], [], [], []
+    x = 4  # start runway
+    for i, kind in enumerate(LEVEL_RECIPES[level]):
+        if kind == "F":
+            blobs += [(x + 4, 13), (x + 10, 13)]
+            if i == 0:
+                chips.append((x + 13, 11))
+            x += 14
+        elif kind == "A":
+            raised.append((x + 1, x + 11, ledge))
+            blobs.append((x + 6, ledge - 2))
+            electrons.append((x + 6, ledge - 5))
+            x += 14
+        elif kind == "B":
+            pits.append((x + 6, x + 5 + pit_w))
+            if 4 <= level <= 6:
+                floats.append((x + 6, x + 5 + pit_w, 11))
+            if level >= 6:
+                flyers.append((x + 6 + pit_w // 2, 8))
+            x += 6 + pit_w + 3
+        elif kind == "C":
+            floats += [(x + 2, x + 5, 12), (x + 7, x + 10, 9), (x + 12, x + 15, 12)]
+            if level >= 7:
+                pits.append((x + 6, x + 11))
+                electrons.append((x + 8, 4))
+            else:
+                electrons.append((x + 8, 4))
+            if level >= 5:
+                flyers.append((x + 3, 7))
+            x += 16
+        elif kind == "D":
+            flyers.append((x + 6, 9 if level < 5 else 8))
+            x += 12
+        elif kind == "E":
+            raised.append((x + 2, x + 8, 13))
+            turret.append((x + 5, 11))
+            x += 12
+    width = x + LEVEL_TAIL
+    # Fit MAX_ACTORS (HUD included): drop late electrons, then late flyers.
+    while HUD_ACTORS + len(blobs + chips + electrons + flyers + turret) > MAX_ACTORS:
+        if len(electrons) > 1:
+            electrons.pop()
+        else:
+            flyers.pop()
+    return {
+        "key": f"l{level}",
+        "level": level,
+        "name": f"Level {level} {LEVEL_NAMES[level]}",
+        "symbol": level_symbol(level),
+        "folder": f"level_{level}",
+        "bg_symbol": f"bg_level{level}",
+        "bg_file": f"level{level}.png",
+        "index": index,
+        "reset": False,
+        "width": width,
+        "parallax": LEVEL_PARALLAX,
+        "play_row": LEVEL_PLAY_ROW,
+        "decor_rows": (1, 2),
+        "goal": True,
+        "floor": [(0, width - 1, FLOOR_TOP)],
+        "raised": raised,
+        "pits": pits,
+        "floats": floats,
+        "blobs": blobs,
+        "chips": chips,
+        "electrons": electrons,
+        "flyers": flyers,
+        "turret": turret,
+        "next": None,
+        "clear_to": level_symbol(level + 1),
+    }
+
+
+for _level in range(2, 10):
+    SEGMENTS.append(build_level(_level, len(SEGMENTS)))
+
+
+def theme_ids(segment: dict, bg_ids: list[str]) -> list[str]:
+    ground, far = LEVEL_THEMES[segment.get("level", 1)]
+    return [uid("palette-" + ground), uid("palette-" + far)] + bg_ids[2:]
+
+
+def stand_top(segment: dict, x: int) -> int | None:
+    """Highest surface at column x, counting top-only floats."""
+    tops = [row for x0, x1, row in segment.get("floats", []) if x0 <= x <= x1]
+    floor = solid_top(segment, x)
+    if floor is not None:
+        tops.append(floor)
+    return min(tops) if tops else None
+
+
+
 
 
 def segment_bodies(segment: dict) -> list[tuple[str, int, int]]:
@@ -1002,7 +1179,7 @@ def paint_ammo() -> list[list[tuple[int, int, int, int]]]:
 
     On the Electron Blue palette, BLUE is slot 3 and E_WHITE is slot 1.
     """
-    count = electron_total() + 1
+    count = AMMO_MAX + 1
     image = blank(count * 16, 16, BLUE)
     for value in range(count):
         origin = value * 16
@@ -1200,12 +1377,100 @@ def paint_lives() -> list[list[tuple[int, int, int, int]]]:
     return image
 
 
+def float_tile() -> list[list[tuple[int, int, int, int]]]:
+    """Floating brick platform (Green Hills palette): outlined, grass lip."""
+    tile = [[DIRT for _ in range(8)] for _ in range(8)]
+    for x in range(8):
+        tile[0][x] = OUTLINE
+        tile[1][x] = GRASS_L
+        tile[7][x] = OUTLINE
+    for y in range(2, 7):
+        tile[y][0] = OUTLINE
+        tile[y][4] = OUTLINE
+    for x in range(8):
+        tile[4][x] = OUTLINE
+    return tile
+
+
+# Goal flag (Far Hills palette: sky, cloud, hill, hill shade). A pole with a
+# pennant marks the exit of Levels 2-9.
+FLAG_TOP = indexed_tile(
+    (
+        "00330000",
+        "03113000",
+        "03113000",
+        "00330000",
+        "00030000",
+        "00030000",
+        "00030000",
+        "00030000",
+    ),
+    FAR,
+)
+FLAG_CLOTH = indexed_tile(
+    (
+        "00032222",
+        "00032212",
+        "00032111",
+        "00032212",
+        "00032222",
+        "00030000",
+        "00030000",
+        "00030000",
+    ),
+    FAR,
+)
+FLAG_POLE = indexed_tile(
+    (
+        "00030000",
+        "00030000",
+        "00030000",
+        "00030000",
+        "00030000",
+        "00030000",
+        "00030000",
+        "00030000",
+    ),
+    FAR,
+)
+FLAG_BASE = indexed_tile(
+    (
+        "00030000",
+        "00030000",
+        "00030000",
+        "00030000",
+        "00333300",
+        "03222230",
+        "03222230",
+        "33333333",
+    ),
+    FAR,
+)
+
+
+def float_at(segment: dict | None, tile_x: int, tile_y: int) -> bool:
+    if not segment:
+        return False
+    return any(x0 <= tile_x <= x1 and row == tile_y for x0, x1, row in segment.get("floats", []))
+
+
+def goal_tile(segment: dict | None, tile_x: int, tile_y: int):
+    """Flag tiles for Levels 2-9: pole at width-7, rows 8..14."""
+    if not segment or not segment.get("goal"):
+        return None
+    if tile_x != seg_w(segment) - 7:
+        return None
+    return {8: FLAG_TOP, 9: FLAG_CLOTH, 14: FLAG_BASE}.get(tile_y, FLAG_POLE if 10 <= tile_y <= 13 else None)
+
+
 def paint_level(
     width: int,
     height: int,
     solid_at,
+    segment: dict | None = None,
 ) -> tuple[list[list[tuple[int, int, int, int]]], list[int], list[int]]:
     ground = {0: sky_tile(), 1: grass_tile(), 2: dirt_tile()}
+    decor_rows = segment.get("decor_rows") if segment else None
     image = blank(width * 8, height * 8, SKY)
     collisions = [0] * (width * height)
     tile_colors = [0] * (width * height)
@@ -1213,8 +1478,18 @@ def paint_level(
         for tile_x in range(width):
             top = solid_at(tile_x)
             cell = tile_y * width + tile_x
-            if top is None or tile_y < top:
+            goal = goal_tile(segment, tile_x, tile_y)
+            if goal is not None and (top is None or tile_y < top):
+                pattern = goal
+                tile_colors[cell] = 1
+            elif float_at(segment, tile_x, tile_y) and (top is None or tile_y < top):
+                # Top-only (jump-through) like a Mario cloud platform.
+                pattern = float_tile()
+                collisions[cell] = 1
+            elif top is None or tile_y < top:
                 name = decoration_name(tile_x, tile_y)
+                if name and decor_rows is not None and tile_y not in decor_rows:
+                    name = None
                 pattern = DECOR[name] if name else ground[0]
                 if name:
                     tile_colors[cell] = 1
@@ -1231,7 +1506,8 @@ def paint_level(
 
 
 def paint_segment(segment: dict) -> tuple[list[list[tuple[int, int, int, int]]], list[int], list[int]]:
-    return paint_level(SEG_W, LEVEL_H, lambda tile_x: solid_top(segment, tile_x))
+    image, collisions, colors = paint_level(seg_w(segment), LEVEL_H, lambda tile_x: solid_top(segment, tile_x), segment)
+    return image, collisions, colors
 
 
 def unique_tiles(image: list[list[tuple[int, int, int, int]]], tile: int = 8) -> int:
@@ -2158,7 +2434,7 @@ def electron_script(name: str, ammo_symbol: str) -> list:
     # (actor_set_frame_offset: offset % frame count), so 9 would show 00.
     # Cap the count; the pickup still scores and vanishes.
     return [
-        if_value(f"{name}-cap", "0", "<", electron_total(), [
+        if_value(f"{name}-cap", "0", "<", AMMO_MAX, [
             event(f"{name}-inc", "EVENT_INC_VALUE", {"variable": "0"}),
         ]),
         show_counter(f"{name}-ammo", ammo_symbol, "0"),
@@ -2399,20 +2675,32 @@ def roadster_script(name: str, segment: dict) -> list:
         beep(f"{name}-whoosh", 10),
         wait_frames(f"{name}-beat", 20),
         # LEVEL 1 CLEAR is shown once, here or by the fallback exit, never both.
-        *exit_script(name, name.split("-")[0]),
+        *exit_script(name, segment),
     ]
 
 
-def exit_script(prefix: str, key: str) -> list:
-    """Clear bonus, one LEVEL 1 CLEAR box with the final score, then the title.
+def exit_script(prefix: str, segment: dict) -> list:
+    """Clear bonus, one LEVEL N CLEAR box with the score, then the next level.
 
     Each caller passes its own prefix so no event id is shared between the
     roadster and the fallback exit trigger. There is no separate clear scene.
+    Clearing a level also gives back one heart (up to 3). A segment without
+    clear_to (none now) would return to the title.
     """
+    key = segment["key"]
+    level = segment.get("level", 1)
+    target = segment.get("clear_to")
+    go = (
+        switch_scene(f"{prefix}-to-next", target, PLAYER_START[0], PLAYER_START[1])
+        if target
+        else switch_scene(f"{prefix}-to-title", "scene_title", *MENU_PLAYER)
+    )
     return [
         *add_score(f"{prefix}-bonus", key, POINTS["clear"]),
-        event(f"{prefix}-clear-text", "EVENT_TEXT", {"text": f"LEVEL 1 CLEAR\nSCORE ${SCORE_VAR}$"}),
-        switch_scene(f"{prefix}-to-title", "scene_title", *MENU_PLAYER),
+        if_value(f"{prefix}-life-up", "1", "<", 3, [event(f"{prefix}-life-inc", "EVENT_INC_VALUE", {"variable": "1"})]),
+        set_number(f"{prefix}-respawn-clear", RESPAWN_VAR, 0),
+        event(f"{prefix}-clear-text", "EVENT_TEXT", {"text": f"LEVEL {level} CLEAR\nSCORE ${SCORE_VAR}$"}),
+        go,
     ]
 
 
@@ -2616,7 +2904,7 @@ def write_shapes_sheet(path: Path) -> None:
 def build_images() -> dict:
     sprites = ROOT / "assets" / "sprites"
     backgrounds = ROOT / "assets" / "backgrounds"
-    ammo_frames = electron_total() + 1
+    ammo_frames = AMMO_MAX + 1
     for shape in PLAYER_SHAPES:
         write_png_indexed(sprites / PLAYER_FILES[shape], 64, 16, paint_shape_player(shape), PLAYER_INDEXED)
     write_shapes_sheet(ROOT / "docs" / "shapes-sheet.png")
@@ -2656,7 +2944,7 @@ def build_images() -> dict:
     painted = {}
     for segment in SEGMENTS:
         image, collisions, colors = paint_segment(segment)
-        write_png(backgrounds / segment["bg_file"], SEG_W * 8, LEVEL_H * 8, image)
+        write_png(backgrounds / segment["bg_file"], seg_w(segment) * 8, LEVEL_H * 8, image)
         painted[segment["symbol"]] = {
             "tiles": unique_tiles(image),
             "collisions": collisions,
@@ -2701,14 +2989,14 @@ def write_segment(
             index=segment["index"],
             x=world_x(segment["index"]),
             y=40,
-            width=SEG_W,
+            width=seg_w(segment),
             height=LEVEL_H,
             background_symbol=segment["bg_symbol"],
-            palette_ids=bg_ids,
+            palette_ids=theme_ids(segment, bg_ids),
             sprite_palette_ids=sprite_ids,
             script=segment_init(segment),
             collisions=collisions,
-            parallax=PARALLAX,
+            parallax=segment.get("parallax", PARALLAX),
             # Turret bolts (projectile group 3) hurt like a blob's side touch.
             player_hit3=hurt_steps(f"{key}-bolt", segment) if segment.get("turret") else None,
         ),
@@ -2896,14 +3184,15 @@ def write_segment(
     gate_script = (
         [switch_scene(f"{key}-continue", segment["next"], PLAYER_START[0], PLAYER_START[1])]
         if segment["next"]
-        else exit_script("exit", key)
+        else exit_script("exit" if key == "ridge" else f"{key}-exit", segment)
     )
     gate_name = "Continue" if segment["next"] else "Exit"
-    gate_symbol = f"trigger_continue_{key}" if segment["next"] else "trigger_exit"
+    gate_symbol = f"trigger_continue_{key}" if segment["next"] else ("trigger_exit" if key == "ridge" else f"trigger_exit_{key}")
     gate_file = "continue.gbsres" if segment["next"] else "exit.gbsres"
     # With a roadster the old exit stays only as a 2-tile fallback at the
     # very end, in case Grok Bot jumps clean over the car.
-    gate_x, gate_w = (SEG_W - 2, 2) if segment.get("roadster") else (SEG_W - 4, 4)
+    width = seg_w(segment)
+    gate_x, gate_w = (width - 2, 2) if segment.get("roadster") else (width - 4, 4)
     write_json(
         trigger_dir / gate_file,
         trigger(gate_name, gate_symbol, trigger_index, gate_x, 9, gate_w, 6, gate_script),
@@ -3102,7 +3391,7 @@ def build_resources(collisions: dict) -> None:
                 tile_colors=collisions[key]["colors"],
             ),
         )
-    ammo_frames = electron_total() + 1
+    ammo_frames = AMMO_MAX + 1
     write_json(
         sprites / "ammo.png.gbsres",
         sprite_resource(
@@ -3124,7 +3413,7 @@ def build_resources(collisions: dict) -> None:
                 name=segment["bg_file"].replace(".png", ""),
                 symbol=segment["bg_symbol"],
                 filename=segment["bg_file"],
-                tiles_x=SEG_W,
+                tiles_x=seg_w(segment),
                 tiles_y=LEVEL_H,
                 tile_colors=collisions[segment["symbol"]]["colors"],
             ),
@@ -3139,6 +3428,8 @@ def build_resources(collisions: dict) -> None:
         palettes / "far_hills.gbsres",
         palette("Far Hills", ["B8F0E8", "F8FCFF", "70C0D8", "287090"]),
     )
+    for theme_name, theme_colors in THEME_COLORS.items():
+        write_json(palettes / f"{theme_name.lower().replace(' ', '_')}.gbsres", palette(theme_name, theme_colors))
     # Boot cards: near-black navy backdrop, teal accent, off-white text.
     write_json(palettes / "boot_dark.gbsres", palette("Boot Dark", ["101828", "60D8C8", "586078", "F0F0F0"]))
     write_json(
@@ -3489,8 +3780,33 @@ def title_script() -> list:
             ["start", "a"],
             [switch_scene("title-to-picker", "scene_picker", *MENU_PLAYER)],
         ),
+        # DEBUG WARP (cheat): each Select on the title adds 1 to WARP_VAR
+        # (wraps 9 -> 0) with a rising beep; Start then the picker's A start
+        # at Level WARP_VAR + 1 with a fresh run. 0 (default) is Level 1.
+        input_script("title-warp", ["select"], [
+            event("title-warp-inc", "EVENT_INC_VALUE", {"variable": WARP_VAR}),
+            if_value("title-warp-wrap", WARP_VAR, ">", 9, [set_number("title-warp-to-0", WARP_VAR, 0)]),
+            beep("title-warp-beep", 8),
+        ]),
         event("title-music", "EVENT_MUSIC_PLAY", {"musicId": MUSIC_ID, "loop": True}),
     ]
+
+
+WARP_VAR = "24"
+
+
+def warp_events() -> list:
+    """Picker start: Level 1 normally, or the debug-warp level (see title)."""
+    start_x, start_y = PLAYER_START
+    chain = [switch_scene("pick-go", "scene_level1_green_hills", start_x, start_y)]
+    for level in range(10, 1, -1):
+        chain = [if_value(f"pick-warp-{level}", WARP_VAR, "==", level - 1, [
+            *reset_run(f"pick-warp-{level}-reset"),
+            set_number(f"pick-warp-{level}-chip", "2", 1),
+            set_number(f"pick-warp-{level}-clear", WARP_VAR, 0),
+            switch_scene(f"pick-warp-{level}-go", level_symbol(level), start_x, start_y),
+        ], chain)]
+    return chain
 
 
 def picker_script() -> list:
@@ -3532,7 +3848,7 @@ def picker_script() -> list:
         beep("pick-down-sound", 7),
         *preview("down"),
     ]
-    go = [switch_scene("pick-go", "scene_level1_green_hills", start_x, start_y)]
+    go = warp_events()
     return [
         hide_player("pick-hide-player"),
         input_script("pick-go-input", ["a", "start"], go),
@@ -3993,7 +4309,7 @@ def scanline_peak(segment: dict) -> int:
     """
     worst = 0
     hud = [(LIVES_AT[0], LIVES_AT[1]), (AMMO_AT[0], AMMO_AT[1])]
-    for left in range(0, SEG_W - 19):
+    for left in range(0, seg_w(segment) - 19):
         rows = [0] * (LEVEL_H + 2)
         # A 16 px actor at tile y covers tile rows y-1 and y (see HUD_ROW);
         # the 2 px nudge spills into row y+1.
@@ -4047,9 +4363,9 @@ def validate_layout() -> None:
         peak = scanline_peak(segment)
         if peak > 10:
             raise SystemExit(f"{label} can put {peak} sprites on one scanline")
-        for x in range(SEG_W):
+        for x in range(seg_w(segment)):
             top = solid_top(segment, x)
-            if top is not None and top < PLAY_ROW:
+            if top is not None and top < segment.get("play_row", PLAY_ROW):
                 raise SystemExit(f"{label} solid at column {x} is inside the scenery band")
         for x0, x1 in segment["pits"]:
             for x in range(x0, x1 + 1):
@@ -4076,7 +4392,7 @@ def validate_layout() -> None:
                 raise SystemExit(f"{label} blob at {(x, y)} patrols off its ledge")
         for kind in ("electrons",):
             for x, y in segment[kind]:
-                ground = solid_top(segment, x)
+                ground = stand_top(segment, x)
                 if ground is None:
                     raise SystemExit(f"{label} {kind} at {(x, y)} is over a pit")
                 rise = required_rise(ground - 2, y)
@@ -4099,7 +4415,7 @@ def validate_layout() -> None:
             raise SystemExit(f"{label} needs at least two blobs before the chip")
         if solid_top(segment, PLAYER_START[0]) != PLAYER_START[1] + 2:
             raise SystemExit(f"{label} start is not on the floor")
-        gate_x = SEG_W - 4
+        gate_x = seg_w(segment) - 4
         if solid_top(segment, gate_x) != FLOOR_TOP:
             raise SystemExit(f"{label} gate is not on the floor")
         for index, (_kind, x, y) in enumerate(bodies):
@@ -4119,15 +4435,18 @@ def layout_rows(segment: dict) -> list[str]:
         marks[(x, y)] = LAYOUT_MARKS[kind]
     for dx in range(4):
         for dy in range(6):
-            marks.setdefault((SEG_W - 4 + dx, 9 + dy), "E")
+            marks.setdefault((seg_w(segment) - 4 + dx, 9 + dy), "E")
     for x0, x1 in segment["pits"]:
         for x in range(x0, x1 + 1):
             for y in range(FLOOR_TOP, FLOOR_TOP + 3):
                 marks.setdefault((x, y), "V")
+    for x0, x1, row in segment.get("floats", []):
+        for x in range(x0, x1 + 1):
+            marks.setdefault((x, row), "-")
     rows = []
     for y in range(LEVEL_H):
         chars = []
-        for x in range(SEG_W):
+        for x in range(seg_w(segment)):
             top = solid_top(segment, x)
             marker = marks.get((x, y))
             if marker is not None and (top is None or y < top):
@@ -4150,12 +4469,12 @@ def main() -> None:
     write_sprite_readme()
     for segment in SEGMENTS:
         info = painted[segment["symbol"]]
-        if len(info["collisions"]) != SEG_W * LEVEL_H:
+        if len(info["collisions"]) != seg_w(segment) * LEVEL_H:
             raise SystemExit(f"{segment['name']} collision size mismatch")
-        if info["tiles"] > 16:
+        if info["tiles"] > (16 if segment.get("level", 1) == 1 else 24):
             raise SystemExit(f"{segment['name']} has {info['tiles']} background tiles")
         print(
-            f"{segment['name']}: {SEG_W} tiles, {actor_count(segment)} actors, "
+            f"{segment['name']}: {seg_w(segment)} tiles, {actor_count(segment)} actors, "
             f"{info['tiles']} background tiles, scanline peak {scanline_peak(segment)}/10"
         )
         print("\n".join(layout_rows(segment)))
