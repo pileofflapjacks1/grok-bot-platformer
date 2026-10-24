@@ -25,28 +25,59 @@ Debug: press Select on the title to warp to a level (test aid).
 
 ## Boss technique
 MUSE is an original fuzzy cream creature (drawn in code; no reference art
-traced). It is 10x8 BG tiles (80x64 px) drawn into a band of the arena
-background with replace-tile events, one column per frame. It enters from
-the right and patrols in 8 px steps (faster as HP drops). An invisible
-80x76 hitbox actor follows it for contact, stomp and shot checks; two small
-cheek sprites add colour. HP (8) is shown as heart pips in the HUD.
-Every few steps it fires a burst of 3 electrons and periodically releases
-blobs; defeated blobs drop ammo, and the player can shoot the boss.
+traced). It is 10x10 BG tiles (80x80 px) drawn into a band of the arena
+background with replace-tile events. It enters from the right and hops
+between three spots (x = 2, 5, 8 tiles, 24 px apart), resting between hops
+(180 / 140 / 110 frames by HP) with a telegraph first (cheeks blink twice
+plus a low beep). An invisible hitbox actor follows it for contact, stomp
+and shot checks; two small cheek sprites add colour. HP (8) is shown as
+heart pips in the HUD. Each landing fires a staggered burst of 3 one-tile
+sparks; every 2nd hop releases a blob at the boss edge facing Grok Bot.
+Defeated blobs drop ammo, and the player can shoot the boss.
 Defeat: shake, flash, "MUSE DEFEATED!" and the win scene.
 
-Options tried: one full redraw per step (too slow, ~58% game speed);
-per-column redraw with yields plus trailing-column clear (current, ~65%).
-A sprite-built boss was rejected (80x64 would overflow 10 sprites/line).
+### Why hops, and the speed numbers (PyBoy, game frames per 900 ticks)
+Each REPLACE_TILE_XY costs roughly 1/7 of a frame (a VRAM-safe tile copy),
+and a game frame is lost whenever the boss thread is still busy. Chunking
+only spreads the cost: a hop costs ~18 game frames however it is paced
+(5 writes per frame, then Wait 1). So MUSE moves less often instead.
+
+| Build | Boss fight speed |
+|-------|------------------|
+| 80bfa34 (8 px steps, 10 writes/frame) | 64-67% (47% at low HP) |
+| 16 px steps every ~72 frames, 5 writes/frame | 75-76% |
+| 2 writes/frame, same steps | 84% |
+| **current: 3 spots, 24 px hops, 5 writes/frame** | **91% (HP 8), 88-89% (HP 4 or 2)** |
+| Level 9 reference | 100% |
+
+Options tried earlier: one full redraw per step (~58%), per-column redraw
+with yields (~65%). A sprite-built boss was rejected (80 px wide would
+overflow 10 sprites/line).
+
+## Stomp rules
+The hitbox's On Hit Player script ignores contact while $5 (hurt lock) or
+$16 (stomp/shot flag) is set. A stomp needs plat_vel_y > 0 and the player's
+Y no lower than 8 px below the hitbox Y: it sets $16 = 1 and $5 = 2 first,
+then bounces, HP-1 and score, waits 20 frames and clears both. Sparks and
+blob hurt paths only run while $16 == 0. HP resets to 8 on a fresh visit;
+a respawn reload (3 hits) deliberately keeps the damage already done.
 
 ## Budgets / GBC notes
 - Levels 2-9: 11 BG tiles each, scanline peak 10/10.
 - Level 10: 176 BG tiles (tight); win scene 43.
-- Boss burst launch row can briefly reach 12 sprites on a line (flicker).
+- Boss sparks are one 8x16 hardware sprite each (6 px orb), launched 5
+  frames apart on rows 8 px apart, below the HUD: mid-screen worst case 8.
 
-## Simplifications / known bugs
-- Boss ~5x player height, moves in 8 px steps, tears briefly while redrawing.
-- Game runs ~65% speed during the boss fight (PyBoy measurement).
-- One defeat flash; score saturates.
-- A stomp can also register a contact hit in the same moment.
-- Stomp and win were verified with memory pokes/teleport, not full play.
-- Moving platforms not used.
+## Simplifications / known issues
+- MUSE moves in 24 px hops between three spots, and tears for ~30 frames
+  while it redraws each hop.
+- The boss fight still runs at ~88-91% speed (PyBoy measurement).
+- Stomps can be chained: a player bouncing on MUSE lands on it again about
+  every 27 frames, so 8 chained stomps beat it in ~4 s.
+- Released blobs walk after spawning and can wander into the boss sprite
+  (blobs do not collide with the boss).
+- Shooting MUSE also sets $16, so for 20 frames after a shot sparks and
+  blobs cannot hurt Grok Bot.
+- One defeat flash; score saturates. Moving platforms not used.
+- Tests used PyBoy with memory writes to place Grok Bot above MUSE (then a
+  real fall); not tested on hardware.
