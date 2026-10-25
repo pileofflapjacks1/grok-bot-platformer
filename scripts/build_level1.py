@@ -2974,9 +2974,7 @@ def build_images() -> dict:
     menu_painters = [("title", paint_title), ("picker", paint_picker)]
     menu_painters += [(key, (lambda lines=lines: paint_boot(lines))) for key, lines in BOOT_SCREENS]
     menu_painters += [("level10", paint_arena), ("win", paint_win)]
-    write_png(ROOT / "assets" / "tilesets" / "muse_tiles.png", TS_W * 8, (2 * BOSS_H + 1) * 8, paint_muse_tileset())
-    write_png(sprites / "muse_cheek.png", 16, 16, paint_cheek())
-    write_png(sprites / "muse_hitbox.png", 16, 16, blank(16, 16, CLEAR))
+    write_png(ROOT / "assets" / "tilesets" / "muse_tiles.png", TS_W * 8, 8, paint_muse_tileset())
     write_png(sprites / "muse_body.png", 2 * MUSE_W, MUSE_H, paint_muse_sprite())
     write_png(sprites / "muse_spark.png", 16, 16, paint_spark())
     for key, painter in menu_painters:
@@ -3525,17 +3523,11 @@ def build_resources(collisions: dict) -> None:
         "symbol": TILESET_ID,
         "filename": "muse_tiles.png",
         "width": TS_W,
-        "height": 2 * BOSS_H + 1,
+        "height": 1,
         "imageWidth": TS_W * 8,
-        "imageHeight": (2 * BOSS_H + 1) * 8,
+        "imageHeight": 8,
     })
     cheek_frame = {"id": uid("cheek-f0"), "tiles": [tile_ref("cheek-f0-l", 0, 0, 6)]}
-    write_json(sprites / "muse_cheek.png.gbsres", sprite_resource(
-        name="muse_cheek", symbol="sprite_muse_cheek", filename="muse_cheek.png",
-        image_path=sprites / "muse_cheek.png", width=16, height=16, animation_type="fixed",
-        animations=[{"id": uid("cheek-anim0"), "frames": [cheek_frame]}]
-        + [empty_frame(f"cheek-anim{i}") for i in range(1, 8)],
-        num_tiles=2, bounds=(0, 0, 8, 8)))
     spark_frame = {"id": uid("spark-f0"), "tiles": [tile_ref("spark-f0-l", 0, 0, 2)]}
     write_json(sprites / "muse_spark.png.gbsres", sprite_resource(
         name="muse_spark", symbol="sprite_muse_spark", filename="muse_spark.png",
@@ -3543,19 +3535,12 @@ def build_resources(collisions: dict) -> None:
         animations=[{"id": uid("spark-anim0"), "frames": [spark_frame]}]
         + [empty_frame(f"spark-anim{i}") for i in range(1, 8)],
         num_tiles=2, bounds=(1, 5, 6, 6)))
-    write_json(sprites / "muse_hitbox.png.gbsres", sprite_resource(
-        name="muse_hitbox", symbol="sprite_muse_hitbox", filename="muse_hitbox.png",
-        image_path=sprites / "muse_hitbox.png", width=16, height=16, animation_type="fixed",
-        animations=[{"id": uid("hitbox-anim0"), "frames": [{"id": uid("hitbox-f0"), "tiles": []}]}]
-        + [empty_frame(f"hitbox-anim{i}") for i in range(1, 8)],
-        num_tiles=0, bounds=(2, 4, BOSS_W * 8 - 4, BOSS_H * 8 - 4)))
     write_json(sprites / "muse_body.png.gbsres", sprite_resource(
         name="muse_body", symbol="sprite_muse_body", filename="muse_body.png",
         image_path=sprites / "muse_body.png", width=2 * MUSE_W, height=MUSE_H, animation_type="fixed",
         animations=muse_sprite_animations(), num_tiles=2 * len(MUSE_TILES),
         canvas_width=MUSE_W, canvas_height=MUSE_H, bounds=MUSE_BOUNDS))
     for name, colors in (
-        ("Muse Body S", sprite_palette("FFF4E0", "E0C090", "584030")),
         ("Muse Arena", [MUSE_SKY, "68D070", "289038", "183028"]),
         ("Muse Body", [MUSE_SKY, "FFF4E0", "E0C090", "584030"]),
         ("Muse HP", [MUSE_SKY, "F8A0C0", "D04878", "302030"]),
@@ -4577,9 +4562,8 @@ BOSS_MIN_X, BOSS_MAX_X = BAND_X0, BAND_X1 - BOSS_W + 1  # 2..8
 BOSS_ENTRY_X = BAND_X1 + 3  # 20: hidden; hops in via 17, 14, 11 to 8
 BOSS_HP = 8
 PIP_X0, PIP_Y = 11, 2
-TS_W = 11  # tileset width in tiles
-TS_FACE = BOSS_H * TS_W  # 110 tiles per facing
-PIP_FULL, PIP_EMPTY = 2 * TS_FACE, 2 * TS_FACE + 1  # 220, 221
+TS_W = 3  # tileset: sky, full pip, empty pip
+PIP_FULL, PIP_EMPTY = 1, 2
 TILESET_ID = "tileset_muse"
 # Variables 11-23 (24 is the debug warp).
 B_X, B_DIR, B_HP, B_BURST, B_COL, B_INV, B_RELEASE, B_TMP, B_STATE, B_SHOW = (
@@ -4591,90 +4575,13 @@ RELEASE_EVERY = 2  # hops between blob releases
 BOSS_STEP = 3  # tiles per hop (24 px): three spots, x = 2, 5, 8
 ROWS_PER_FRAME = 5  # replace-tile writes per frame (half a column)
 P_Y, H_Y = "27", "28"  # stomp test: player and hitbox y (px)
-B_IMM = "29"  # stomp immunity, in 4-frame ticks (counted down by the boss thread)
+B_IMM = "29"  # stomp immunity, in 16-frame ticks (counted down by VM timer 2)
 B_SHOT_CD = "30"  # 20-frame boss grace after an electron hit (shots only)
-IMM_TICKS = 26  # ~104 frames of rest time; the hop redraw pauses the count
+IMM_TICKS = 7  # ~112 frames of stomp immunity
 P_X = "31"  # player x (px) for the stomp knock-off
 BURST_LIFE = 1.2
 ARENA_LEDGES = [(0, 1, 11), (18, 19, 11), (0, 1, 7), (18, 19, 7), (3, 7, 4), (12, 16, 4)]
 MUSE_SKY = "A0B8F0"
-CHEEK_Y_PX = 96  # calibrated in PyBoy: cheek rows land on boss rows 54-57
-
-
-def paint_muse(facing_right: bool = True) -> list[list[int]]:
-    """80x80 indexed boss art (0 sky, 1 pale cream, 2 beige fur, 3 dark).
-
-    Original art: a round fuzzy creature, pale face, two dot eyes, small
-    smile. Cheeks are separate pink sprites. Drawn facing right (face 2-3 px
-    toward the front); the left-facing copy is the mirror image.
-    """
-    import math
-
-    size = 80
-    grid = [[0] * size for _ in range(size)]
-    cx, cy = 39.5, 42.0
-
-    def fur_radius(angle: float) -> float:
-        spikes = 22
-        phase = (angle * spikes / (2 * math.pi)) % 1.0
-        tri = abs(phase - 0.5) * 2  # 1 at spike tip, 0 between
-        r = 34.5 + 2.5 * tri
-        # Three taller tufts on top.
-        top = math.cos(angle + math.pi / 2)  # 1 at the top
-        if top > 0.92:
-            r += 2.0 * tri
-        return min(r, 37.4)
-
-    inside = [[False] * size for _ in range(size)]
-    for y in range(size):
-        for x in range(size):
-            dx, dy = x - cx, y - cy
-            if math.hypot(dx, dy) <= fur_radius(math.atan2(dy, dx)):
-                inside[y][x] = True
-    for y in range(size):
-        for x in range(size):
-            if not inside[y][x]:
-                continue
-            edge = any(
-                not (0 <= x + ox < size and 0 <= y + oy < size and inside[y + oy][x + ox])
-                for ox, oy in ((1, 0), (-1, 0), (0, 1), (0, -1))
-            )
-            grid[y][x] = 3 if edge else 2
-    # Fur texture: short light strokes scattered over the body.
-    for y in range(4, size - 4):
-        for x in range(4, size - 4):
-            if grid[y][x] == 2 and ((x * 7 + y * 13) % 29 == 0):
-                grid[y][x] = 1
-                if grid[y + 1][x] == 2:
-                    grid[y + 1][x] = 1
-            elif grid[y][x] == 2 and ((x * 11 + y * 5) % 37 == 0):
-                grid[y][x] = 3
-    # Pale face (front-shifted oval).
-    fx, fy, rx, ry = 42.0, 50.0, 19.0, 14.5
-    for y in range(size):
-        for x in range(size):
-            d = ((x - fx) / rx) ** 2 + ((y - fy) / ry) ** 2
-            if d <= 1.0 and grid[y][x] in (1, 2, 3) and inside[y][x]:
-                grid[y][x] = 1
-    # Feet: two little dark-rimmed paws at the bottom.
-    for fxp in (24, 55):
-        for y in range(72, 79):
-            for x in range(fxp - 6, fxp + 7):
-                d = ((x - fxp) / 6.5) ** 2 + ((y - 76) / 3.5) ** 2
-                if d <= 1.0:
-                    grid[y][x] = 3 if d > 0.55 else 2
-    # Eyes: 3x4 dark dots with a pale glint.
-    for ex in (33, 48):
-        for y in range(43, 47):
-            for x in range(ex, ex + 3):
-                grid[y][x] = 3
-        grid[43][ex + 1] = 1
-    # Small smile.
-    for x, y in ((38, 53), (39, 54), (40, 55), (41, 55), (42, 55), (43, 55), (44, 54), (45, 53)):
-        grid[y][x] = 3
-    if not facing_right:
-        grid = [list(reversed(row)) for row in grid]
-    return grid
 
 
 INDEX_RGBA = [SKY, GRASS_L, DIRT, OUTLINE]  # green channel -> BG colour 0..3
@@ -4704,59 +4611,75 @@ def pip_tile(full: bool) -> list[list[int]]:
 
 
 def paint_muse_tileset() -> list[list[tuple[int, int, int, int]]]:
-    rows = 2 * BOSS_H + 1
-    image = blank(TS_W * 8, rows * 8, SKY)
-    for face, art in enumerate((paint_muse(True), paint_muse(False))):
-        for r in range(BOSS_H):
-            for c in range(BOSS_W):
-                tx, ty = (c + 1) * 8, (face * BOSS_H + r) * 8
-                for y in range(8):
-                    for x in range(8):
-                        image[ty + y][tx + x] = INDEX_RGBA[art[r * 8 + y][c * 8 + x]]
+    """Replace-tile source for the HP hearts: tile 0 sky, 1 full, 2 empty."""
+    image = blank(TS_W * 8, 8, SKY)
     for k, full in enumerate((True, False)):
         tile = pip_tile(full)
         for y in range(8):
             for x in range(8):
-                image[2 * BOSS_H * 8 + y][k * 8 + x] = INDEX_RGBA[tile[y][x]]
+                image[y][(k + 1) * 8 + x] = INDEX_RGBA[tile[y][x]]
     return image
 
 
-def paint_muse_sprite() -> list[list[tuple[int, int, int, int]]]:
-    """96x64 sheet: two 48x64 frames of sprite MUSE (cheeks on, cheeks off).
+MUSE_ART = (
+    # 24x32, facing right. . clear, c cream, p pink cheek, d dark.
+    "........d...d...........",
+    ".......dcd.dcd..d.......",
+    "....d..dccdcccddcd......",
+    "...dcddccccccccccd..d...",
+    "....dccccccccccccdddcd..",
+    "..ddccccccccccccccccd...",
+    ".dccccccccccccccccccd...",
+    "..dcccccccccccccccccdd..",
+    ".dccccccccccccccccccccd.",
+    "dccccccccccccccccccccd..",
+    ".dccccccccccccccccccccd.",
+    "dccccccccccccdccccdcccd.",
+    ".dcccccccccccdccccdccccd",
+    "dccccccccccccdccccdcccd.",
+    ".dccccccccccccccccccccd.",
+    "dcccccccccccppcccccppccd",
+    ".dccccccccccppccccdppcd.",
+    "dcccccccccccccdccdccccd.",
+    ".dcccccccccccccddccccccd",
+    "dccccccccccccccccccccd..",
+    ".dccccccccccccccccccccd.",
+    "dccccccccccccccccccccd..",
+    ".dcccccccccccccccccccd..",
+    "dccccccccccccccccccccd..",
+    ".dccccccccccccccccccd...",
+    "..dccccccccccccccccccd..",
+    ".dcccccccccccccccccd....",
+    "..ddccccccccccccccdd....",
+    "....ddcccddddccccd......",
+    "...dcccccd..dcccccd.....",
+    "...dddddd...ddddddd.....",
+    "........................",
+)
 
-    The 80x80 BG art (paint_muse) resampled to 48x64. Cream/beige/dark map
-    to the sprite light/mid/dark slots of Muse Body S. The two 8x16 tiles
-    holding the cheeks use Muse Pink (cream, pink, dark): any beige fur in
-    those tiles is repainted cream so only the cheeks show pink.
-    Fills MUSE_TILES with the non-empty (col, row, slot) tiles."""
-    art = paint_muse(True)
-    small = [[art[min(79, int((y + 0.5) * 80 / MUSE_H))][min(79, int((x + 0.5) * 80 / MUSE_W))]
-              for x in range(MUSE_W)] for y in range(MUSE_H)]
-    # Cheeks: soft ovals under the eyes (eye dots land near x 20 and 29).
-    cheeks = set()
-    for cx in (17, 34):
-        for y in range(39, 43):
-            for x in range(cx - 2, cx + 3):
-                if ((x - cx) / 2.6) ** 2 + ((y - 40.5) / 1.9) ** 2 <= 1.0:
-                    cheeks.add((x, y))
-    pink_tiles = {(x // 8, y // 16) for x, y in cheeks}
-    colour = {1: WHITE, 2: GRAY, 3: BLACK}
+
+def paint_muse_sprite() -> list[list[tuple[int, int, int, int]]]:
+    """48x32 sheet: two 24x32 frames of MUSE (cheeks on, cheeks off).
+
+    Original art drawn at size: a round fuzzy cream creature with tufts,
+    dot eyes and a smile toward the right (flipLeft mirrors it) and pink
+    cheeks. One palette (Muse Pink: cream, pink, dark) for all tiles."""
+    assert len(MUSE_ART) == MUSE_H and all(len(r) == MUSE_W for r in MUSE_ART)
+    colour = {"c": WHITE, "p": GRAY, "d": BLACK}
     image = blank(2 * MUSE_W, MUSE_H, CLEAR)
     for f in range(2):
-        for y in range(MUSE_H):
-            for x in range(MUSE_W):
-                c = small[y][x]
-                if not c:
+        for y, row in enumerate(MUSE_ART):
+            for x, ch in enumerate(row):
+                if ch == ".":
                     continue
-                tile = (x // 8, y // 16)
-                if tile in pink_tiles:
-                    c = 2 if (f == 0 and (x, y) in cheeks) else (1 if c == 2 else c)
-                image[y][f * MUSE_W + x] = colour[c]
+                if ch == "p" and f == 1:
+                    ch = "c"
+                image[y][f * MUSE_W + x] = colour[ch]
     MUSE_TILES.clear()
     for r in range(MUSE_H // 16):
         for c in range(MUSE_W // 8):
-            if any(small[y][x] for y in range(r * 16, r * 16 + 16) for x in range(c * 8, c * 8 + 8)):
-                MUSE_TILES.append((c, r, MUSE_PINK_SLOT if (c, r) in pink_tiles else MUSE_SLOT))
+            if any(MUSE_ART[y][x] != "." for y in range(r * 16, r * 16 + 16) for x in range(c * 8, c * 8 + 8)):
+                MUSE_TILES.append((c, r, MUSE_PINK_SLOT))
     return image
 
 
@@ -4769,18 +4692,6 @@ def muse_sprite_animations() -> list[dict]:
         } for c, r, slot in MUSE_TILES]
     frames = [{"id": uid(f"muse-f{f}"), "tiles": tiles(f)} for f in range(2)]
     return [{"id": uid("muse-anim0"), "frames": frames}] + [empty_frame(f"muse-anim{i}") for i in range(1, 8)]
-
-
-def paint_cheek() -> list[list[tuple[int, int, int, int]]]:
-    """16x16, one 8x16 column used: a soft pink oval at x 1..6, y 6..9."""
-    image = blank(16, 16, CLEAR)
-    spec = ("011110", "111111", "111111", "011110")
-    for y, row in enumerate(spec):
-        for x, bit in enumerate(row):
-            if bit == "1":
-                image[6 + y][1 + x] = WHITE
-    image[7][2] = GRAY  # tiny highlight in the mid tone
-    return image
 
 
 def paint_spark() -> list[list[tuple[int, int, int, int]]]:
@@ -4887,15 +4798,16 @@ def draw_pips(name: str) -> list:
 HITBOX = "actor_boss-hitbox"  # v4: the MUSE sprite actor itself (body + hitbox)
 BOSS_BLOBS = ("actor_boss-blob1", "actor_boss-blob2")
 BOSS_DROPS = ("actor_boss-drop1", "actor_boss-drop2")
-# v4 sprite MUSE: a 48x64 metasprite actor moved by whole pixels every frame.
-MUSE_W, MUSE_H = 48, 64
+# v5 sprite MUSE: one 24x32 metasprite actor (6 hardware sprites) moved by
+# the engine's own Move To at a fixed speed, so every tile moves together
+# in actors_update on the same frame and the script never touches x mid-walk.
+MUSE_W, MUSE_H = 24, 32
 MUSE_Y = FLOOR_TOP * 8 - 16           # actor y (px): 16 px base on the floor
-MUSE_BOUNDS = (-14, -44, 44, 58)      # x, y (down), w, h from the base top-left
-MUSE_SPOTS = (24, 72, 120)            # actor x (px); body spans x-16 .. x+32
+MUSE_BOUNDS = (-2, -12, 20, 27)       # x, y (down), w, h from the base top-left
+MUSE_LEFT, MUSE_RIGHT = 20, 124       # patrol ends (actor x, px); body spans x-4 .. x+20
 MUSE_ENTRY = 152                      # walks in from the right edge
-MUSE_STEP = MUSE_SPOTS[1] - MUSE_SPOTS[0]
 MUSE_TILES: list = []                 # (col, row, palette slot) filled by paint_muse_sprite
-MUSE_SLOT, MUSE_PINK_SLOT = 5, 6
+MUSE_PINK_SLOT = 6
 
 
 def set_muse_frame(name: str, frame: int) -> dict:
@@ -4916,8 +4828,8 @@ def boss_segment() -> dict:
     }
 
 
-SPARK_X = {"left": -16, "right": 24}
-SPARK_Y = (-56, -64, -72)  # above MUSE's head, staggered, below the HUD band
+SPARK_X = {"left": -4, "right": 12}
+SPARK_Y = (-24, -32, -40)  # above MUSE's head (top at y-16), staggered, below the HUD band
 
 
 def launch_spark(name: str, angle: int, x: int, y: int) -> dict:
@@ -4961,8 +4873,8 @@ def boss_release(name: str) -> list:
             set_number(f"{name}-b{k}-busy", B_BLOB[k], 1),
             event(f"{name}-b{k}-side", "EVENT_IF_ACTOR_RELATIVE_TO_ACTOR", {
                 "actorId": "player", "operation": "left", "otherActorId": uid(HITBOX), "__collapseElse": False,
-            }, {"true": [put("l", f"max(({v(B_X)} - 16) / 8 - 2, 0)")],
-                "false": [put("r", f"min(({v(B_X)} + 32) / 8, {CLEAR_W - 2})")]}),
+            }, {"true": [put("l", f"max(({v(B_X)} - 4) / 8 - 2, 0)")],
+                "false": [put("r", f"min(({v(B_X)} + 27) / 8, {CLEAR_W - 2})")]}),
             event(f"{name}-b{k}-on", "EVENT_ACTOR_ACTIVATE", {"actorId": sym}),
             event(f"{name}-b{k}-show", "EVENT_ACTOR_SHOW", {"actorId": sym}),
             event(f"{name}-b{k}-col", "EVENT_ACTOR_COLLISIONS_ENABLE", {"actorId": sym}),
@@ -4985,7 +4897,8 @@ def boss_defeat(name: str, seg: dict) -> list:
             event(f"{name}-blob{k}-off", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(BOSS_BLOBS[k])}),
             event(f"{name}-drop{k}-off", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(BOSS_DROPS[k])}),
         ]
-    return steps + [set_muse_frame(f"{name}-cheeks-off", 1), beep(f"{name}-boom", 1)]
+    return steps + [event(f"{name}-stop", "EVENT_ACTOR_MOVE_CANCEL", {"actorId": uid(HITBOX)}),
+                    set_muse_frame(f"{name}-cheeks-off", 1), beep(f"{name}-boom", 1)]
 
 
 def boss_finale(seg: dict) -> list:
@@ -5010,8 +4923,8 @@ def knock_off(name: str) -> list:
     """Bounce Grok Bot up and ease his x to just clear of MUSE's body on the
     nearer side over 6 frames (airborne, so the engine keeps the position)."""
     centre = f"{v(B_X)} + 8"
-    target = (f"({v(P_X)} < {centre}) * max({v(B_X)} - 16 - 18, 0) + "
-              f"({v(P_X)} >= {centre}) * min({v(B_X)} + 32 + 2, {CLEAR_W * 8 - 16})")
+    target = (f"({v(P_X)} < {centre}) * max({v(B_X)} - 4 - 18, 0) + "
+              f"({v(P_X)} >= {centre}) * min({v(B_X)} + 20 + 2, {CLEAR_W * 8 - 16})")
     steps = [event(f"{name}-bounce", "EVENT_PLAYER_BOUNCE", {"height": "high"}),
              set_expr(f"{name}-target", "25", target)]
     for i in range(6):
@@ -5120,7 +5033,7 @@ def boss_blob_contact(k: int, seg: dict) -> list:
 
 
 def imm_tick(name: str) -> list:
-    """One 4-frame tick of stomp immunity: count down and blink the cheeks."""
+    """One 16-frame tick of stomp immunity: count down and blink the cheeks."""
     return [if_value(f"{name}-imm-on", B_IMM, ">", 0, [
         event(f"{name}-imm-dec", "EVENT_DEC_VALUE", {"variable": B_IMM}),
         if_expr(f"{name}-imm-blink", f"{v(B_IMM)} % 2 == 1", [set_muse_frame(f"{name}-blink-off", 1)],
@@ -5128,36 +5041,30 @@ def imm_tick(name: str) -> list:
     ])]
 
 
-def muse_walk(name: str) -> list:
-    """Walk smoothly from B_X to B_COL: whole pixels every frame (speed B_TMP
-    px/frame), 4 frames per loop pass plus one immunity tick. All targets
-    are multiples of 8 px from the start, so 1 or 2 px steps land exactly."""
-    step = []
-    for i in range(4):
-        step += [
-            set_expr(f"{name}-x{i}", B_X, f"{v(B_X)} + (1 - 2 * {v(B_DIR)}) * {v(B_TMP)}"),
-            *place_boss(f"{name}-p{i}"),
-            wait_frames(f"{name}-w{i}", 1),
-        ]
+def muse_walk(name: str, target) -> list:
+    """One engine-driven walk: Move To at the actor's fixed speed, no
+    collisions, horizontal only. actors_update steps the single metasprite
+    by the same amount every frame and sets its facing; the boss thread just
+    waits for the move to finish (a defeat cancels it)."""
     return [
-        if_value(f"{name}-dir", B_DIR, "==", 1,
-                 [event(f"{name}-face-l", "EVENT_ACTOR_SET_DIRECTION", {"actorId": uid(HITBOX), "direction": {"type": "direction", "value": "left"}})],
-                 [event(f"{name}-face-r", "EVENT_ACTOR_SET_DIRECTION", {"actorId": uid(HITBOX), "direction": {"type": "direction", "value": "right"}})]),
-        loop_while(f"{name}-loop", f"{v(B_X)} != {v(B_COL)} && {v(B_STATE)} != 2", step + imm_tick(name)),
+        event(f"{name}-move", "EVENT_ACTOR_MOVE_TO", {
+            "actorId": uid(HITBOX), "x": {"type": "number", "value": target},
+            "y": {"type": "number", "value": MUSE_Y}, "units": "pixels",
+            "moveType": "horizontal", "collideWith": [], "lockDirection": []}),
+        event(f"{name}-where", "EVENT_ACTOR_GET_POSITION", {"actorId": uid(HITBOX), "vectorX": B_X, "vectorY": "26", "units": "pixels"}),
     ]
 
 
 def boss_loop(seg: dict) -> list:
-    """The boss thread: walk in from the right, then patrol between three
-    spots; at each spot: burst, maybe release a blob, rest, telegraph."""
+    """The boss thread: walk in from the right, then patrol the whole arena
+    left-right. At each end: burst, maybe release a blob, a brief rest,
+    a telegraph, then turn and walk on."""
     rest = [
-        set_expr("boss-rest", B_TMP2, f"({v(B_HP)} > 5) * 30 + ({v(B_HP)} <= 5 && {v(B_HP)} > 2) * 22 + ({v(B_HP)} <= 2) * 15"),
+        set_expr("boss-rest", B_TMP2, f"({v(B_HP)} > 5) * 10 + ({v(B_HP)} <= 5 && {v(B_HP)} > 2) * 7 + ({v(B_HP)} <= 2) * 4"),
         loop_while("boss-rest-loop", f"{v(B_TMP2)} > 0 && {v(B_STATE)} == 1", [
             wait_frames("boss-rest-tick", 4),
             event("boss-rest-dec", "EVENT_DEC_VALUE", {"variable": B_TMP2}),
-            *imm_tick("boss-rest"),
         ]),
-        # Telegraph the next walk: the cheeks blink twice with a low beep.
         if_value("boss-tele-live", B_STATE, "==", 1, [
             beep("boss-tele-beep", 1),
             *[e for i in range(2) for e in (
@@ -5166,19 +5073,17 @@ def boss_loop(seg: dict) -> list:
         ]),
     ]
     entering = [
-        set_number("boss-enter-speed", B_TMP, 1),
-        set_number("boss-enter-target", B_COL, MUSE_SPOTS[-1]),
-        *muse_walk("boss-enter"),
+        *muse_walk("boss-enter", MUSE_RIGHT),
         beep("boss-enter-stomp", 1),
         set_number("boss-fight", B_STATE, 1),
+        set_number("boss-dir-l", B_DIR, 1),
     ]
     fighting = [
-        if_value("boss-left-end", B_X, "<=", MUSE_SPOTS[0], [set_number("boss-turn-r", B_DIR, 0)]),
-        if_value("boss-right-end", B_X, ">=", MUSE_SPOTS[-1], [set_number("boss-turn-l", B_DIR, 1)]),
-        set_expr("boss-target", B_COL, f"{v(B_X)} + (1 - 2 * {v(B_DIR)}) * {MUSE_STEP}"),
-        set_expr("boss-speed", B_TMP, f"1 + ({v(B_HP)} <= 2)"),
-        *muse_walk("boss-walk"),
+        if_value("boss-hp-fast", B_HP, "<=", 2, [
+            event("boss-speed2", "EVENT_ACTOR_SET_MOVEMENT_SPEED", {"actorId": uid(HITBOX), "speed": 2})]),
+        if_value("boss-dir", B_DIR, "==", 1, muse_walk("boss-walk-l", MUSE_LEFT), muse_walk("boss-walk-r", MUSE_RIGHT)),
         if_value("boss-still-live", B_STATE, "==", 1, [
+            if_value("boss-turn", B_DIR, "==", 1, [set_number("boss-turn-r", B_DIR, 0)], [set_number("boss-turn-l", B_DIR, 1)]),
             event("boss-burst-tick", "EVENT_DEC_VALUE", {"variable": B_BURST}),
             if_expr("boss-burst-now", f"{v(B_BURST)} <= 0 && {v(B_STATE)} == 1", [
                 *boss_burst("boss-burst"),
@@ -5196,7 +5101,7 @@ def boss_loop(seg: dict) -> list:
         if_value("boss-is-entering", B_STATE, "==", 0, entering, [
             if_value("boss-is-fighting", B_STATE, "==", 1, fighting, [wait_frames("boss-idle", 1)]),
         ]),
-    ]), *boss_finale(seg)]
+    ]), event("boss-imm-timer-off", "EVENT_TIMER_DISABLE", {"timer": 2}), *boss_finale(seg)]
 
 
 def boss_init(seg: dict) -> list:
@@ -5216,6 +5121,10 @@ def boss_init(seg: dict) -> list:
         set_number("boss-show0", B_SHOW, 1),
         set_number("boss-inv0", B_INV, 0),
         set_number("boss-imm0", B_IMM, 0),
+        # B_COL/B_TMP are unused since v5 but stay set so GB Studio keeps
+        # the variable numbering (memory slot = id) stable for debugging.
+        set_number("boss-col0", B_COL, 0),
+        set_number("boss-tmp0", B_TMP, 0),
         set_number("boss-shotcd0", B_SHOT_CD, 0),
         set_number("boss-burst0", B_BURST, 1),
         set_number("boss-release0", B_RELEASE, 2),
@@ -5223,6 +5132,12 @@ def boss_init(seg: dict) -> list:
         set_number("boss-blob1-free", B_BLOB[1], 0),
         if_value("boss-hp-sane", B_HP, "<=", 0, [set_number("boss-hp0", B_HP, BOSS_HP)]),
         set_muse_frame("boss-cheeks0", 0),
+        event("boss-speed0", "EVENT_ACTOR_SET_MOVEMENT_SPEED", {"actorId": uid(HITBOX), "speed": 1}),
+        # Stomp immunity ticks on timer 2 (GBVM timers tick in 16-frame units), so it counts down
+        # while the engine walks MUSE and the boss thread is blocked.
+        event("boss-imm-timer", "EVENT_SET_TIMER_SCRIPT",
+              {"timer": 2, "duration": 16 / 60, "units": "frames", "frames": 16},
+              {"script": imm_tick("boss-timer")}),
     ]
     for k in range(2):
         script += [
@@ -5245,7 +5160,7 @@ def write_boss(painted: dict, bg_ids: list[str], sprite_ids: list[str]) -> None:
     actor_dir = level_dir / "actors"
     delete_gbsres(actor_dir)
     delete_gbsres(level_dir / "triggers")
-    boss_sprites = sprite_ids[:5] + [uid("palette-Muse Body S"), uid("palette-Muse Pink"), sprite_ids[7]]
+    boss_sprites = sprite_ids[:6] + [uid("palette-Muse Pink"), sprite_ids[7]]
     boss_bg = [uid("palette-Muse Arena"), uid("palette-Far Hills"), uid("palette-Muse Body"), uid("palette-Muse HP")] + bg_ids[4:]
     index = len(SEGMENTS) + 2 + len(BOOT_SCREENS)
     write_json(level_dir / "scene.gbsres", scene(
@@ -5271,8 +5186,8 @@ def write_boss(painted: dict, bg_ids: list[str], sprite_ids: list[str]) -> None:
         add(f"score_{tag}.gbsres", name=f"Score {tag}", symbol=f"actor_score_{tag}_{key}", x=SCORE_AT + offset, y=HUD_ROW,
             sprite_symbol=sprite, palette_name="Electron Blue", script=[], animate=False, pinned=True, collision_group="")
     add("hitbox.gbsres", name=f"{BOSS_NAME}", symbol=HITBOX, x=MUSE_ENTRY // 8, y=MUSE_Y // 8,
-        sprite_symbol="sprite_muse_body", palette_name="Muse Body S", script=boss_contact(seg),
-        hit1_script=boss_shot(seg), animate=False, collision_group="1")
+        sprite_symbol="sprite_muse_body", palette_name="Muse Pink", script=boss_contact(seg),
+        hit1_script=boss_shot(seg), animate=False, collision_group="1", move_speed=1)
     for k, symbol in enumerate(BOSS_BLOBS):
         add(f"blob_{k + 1}.gbsres", name=f"Released Blob {k + 1}", symbol=symbol, x=6 + 6 * k, y=FLOOR_TOP - 2,
             sprite_symbol="sprite_enemy_red_blob", palette_name="Blob Red", script=boss_blob_contact(k, seg),
@@ -5316,7 +5231,7 @@ def boss_scanline_note() -> str:
     # apart, so at most 2 share a line: 8.
     # v4 sprite MUSE: <= 6 tiles per row (cheeks are inside the body
     # sprite), player 2, a spark 1, a player shot 1-2: <= 10 on MUSE's rows.
-    return f"boss arena: HUD rows 10/10; sprite MUSE {MUSE_W}x{MUSE_H} = {len(MUSE_TILES)} OAM tiles, <= 6 per row"
+    return f"boss arena: HUD rows 10/10; sprite MUSE {MUSE_W}x{MUSE_H} = {len(MUSE_TILES)} OAM tiles, <= 3 per row"
 
 
 def main() -> None:

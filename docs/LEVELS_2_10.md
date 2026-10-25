@@ -156,3 +156,10 @@ drops, HP hearts, defeat flash and win screen.
 OAM budget: HUD 8 + MUSE 22 + player 2 + sparks 3 = 35; with 2 blobs or
 drops on screen as well it can reach the 40-sprite limit, and the last
 actors drawn may be dropped for a frame (not seen in PyBoy tests).
+
+## v5 — smaller, smooth MUSE (PyBoy-only, untested on hardware)
+
+- MUSE is redrawn as original 24x32 art (cream fuzzy body, dot eyes, smile, pink cheeks; faces its walk direction). It is 6 hardware sprites on one palette. The 48x64 art, cheek actor, hitbox sprite and boss tileset art are gone (the tileset is now just sky plus heart pips).
+- **Stutter root cause (v4):** MUSE was moved by a script thread that called Set Position and then waited a frame. GBVM threads don't resume in step with rendering, so on busy frames a step repeated or got skipped (the PyBoy log showed 25,25 and 62→64). The 22-tile body also pushed OAM to 40 and 12 sprites on a line, so tiles dropped and flickered on hardware.
+- **v5 motion:** a single actor and metasprite, moved by the engine's Move To at a fixed speed: 1 px/frame, or 2 px/frame when HP is 2 or less. All tiles update in actors_update on the same frame. It patrols the whole arena from x 20 to 124. At each end it does a spark burst and, every second pass, a blob release, then rests briefly, gives a cheek-blink telegraph and turns. Stomp immunity counts down on VM timer 2 (16-frame ticks, 7 ticks ≈ 112 frames) because the boss thread is blocked during a move. A defeat cancels the move.
+- Re-tuned for the new size: hitbox bounds (-2,-12,20,27), stomp zone, spark launch points (x -4/+12, y -24/-32/-40), blob release tiles and knock-off targets.
