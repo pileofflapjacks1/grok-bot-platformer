@@ -170,27 +170,6 @@
       }
     },
     {
-      "id": "430cba45-8cc1-5486-8e7c-125daff31dbb",
-      "command": "EVENT_ACTOR_COLLISIONS_DISABLE",
-      "args": {
-        "actorId": "5863dc03-1b60-5a20-99ba-fc6f5143f036"
-      }
-    },
-    {
-      "id": "5e3dde44-d9c4-5649-871d-148a3b529987",
-      "command": "EVENT_ACTOR_HIDE",
-      "args": {
-        "actorId": "5863dc03-1b60-5a20-99ba-fc6f5143f036"
-      }
-    },
-    {
-      "id": "6b7ca2bb-1e2e-5ec2-a81d-182f5a230f41",
-      "command": "EVENT_ACTOR_DEACTIVATE",
-      "args": {
-        "actorId": "5863dc03-1b60-5a20-99ba-fc6f5143f036"
-      }
-    },
-    {
       "id": "eeca121f-24ca-58b3-9213-2fa8f9c6c52d",
       "command": "EVENT_ACTOR_COLLISIONS_DISABLE",
       "args": {
@@ -730,7 +709,7 @@
           },
           "valueB": {
             "type": "number",
-            "value": 1000
+            "value": 100
           }
         }
       }
@@ -741,7 +720,7 @@
       "args": {
         "variable": "8",
         "operator": ">",
-        "comparator": 9990,
+        "comparator": 9999,
         "__collapseElse": true
       },
       "children": {
@@ -753,11 +732,36 @@
               "variable": "8",
               "value": {
                 "type": "number",
-                "value": 9990
+                "value": 9999
               }
             }
           }
         ]
+      }
+    },
+    {
+      "id": "f2ba152f-b8d2-585f-a977-91596b05144a",
+      "command": "EVENT_ACTOR_SET_FRAME",
+      "args": {
+        "actorId": "0223d273-0643-5277-9b66-38807e293e16",
+        "frame": {
+          "type": "mod",
+          "valueA": {
+            "type": "div",
+            "valueA": {
+              "type": "variable",
+              "value": "8"
+            },
+            "valueB": {
+              "type": "number",
+              "value": 1000
+            }
+          },
+          "valueB": {
+            "type": "number",
+            "value": 10
+          }
+        }
       }
     },
     {
@@ -775,7 +779,7 @@
             },
             "valueB": {
               "type": "number",
-              "value": 1000
+              "value": 100
             }
           },
           "valueB": {
@@ -800,7 +804,7 @@
             },
             "valueB": {
               "type": "number",
-              "value": 100
+              "value": 10
             }
           },
           "valueB": {
@@ -825,7 +829,7 @@
             },
             "valueB": {
               "type": "number",
-              "value": 10
+              "value": 1
             }
           },
           "valueB": {
@@ -871,7 +875,7 @@
       "id": "7180ebe4-f4a8-5f30-bfef-0089961217b6",
       "command": "EVENT_TEXT",
       "args": {
-        "text": "LEVEL 1 CLEAR\nSCORE $8$"
+        "text": "LEVEL 1 CLEAR\nSCORE $8$0"
       }
     },
     {

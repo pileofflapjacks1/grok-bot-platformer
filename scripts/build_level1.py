@@ -92,10 +92,12 @@ SCORE_VAR = "8"
 # thousands, hundreds, and "tens + a fixed 0" (every award is a multiple of
 # 10). The single-digit frames leave the right 8 px blank, which GB Studio
 # drops from the frame, so those two actors cost 1 hardware sprite each.
-SCORE_AT = 7
+SCORE_AT = 6
 # Highest score the HUD can show: its last digit is a fixed 0 (awards are multiples of 10).
-SCORE_MAX = 9990
-SCORE_DIGITS = (("k", 1000, "sprite_score_digit"), ("h", 100, "sprite_score_digit"), ("t", 10, "sprite_score_tens"))
+# v6: SCORE_VAR counts tens of points (GB Studio vars are 16-bit signed, so
+# raw points would overflow at 32767). 9999 tens = 99,990 on a 5-digit HUD.
+SCORE_MAX = 9999
+SCORE_DIGITS = (("m", 1000, "sprite_score_digit"), ("k", 100, "sprite_score_digit"), ("h", 10, "sprite_score_digit"), ("t", 1, "sprite_score_tens"))
 POINTS = {"blob": 100, "flyer": 200, "turret": 500, "electron": 10, "chip": 1000, "clear": 1000}
 VIOLET = (152, 160, 224, 255)  # mid band: the body slot of Flyer Violet
 # Screen bands. Speeds are GB Studio parallax values: 0 is normal, 2 is 1/4, 4 is 1/16.
@@ -121,7 +123,8 @@ def seg_w(segment: dict) -> int:
 # (8); it stays 8 so the badge keeps its 9 frames now that ammo carries over
 # ten levels.
 AMMO_MAX = 8
-HUD_ACTORS = 2 + 3  # lives, ammo, three score digits
+PLAYER_BOUNDS = (2, 0, 12, 16)
+HUD_ACTORS = 2 + 4  # lives, ammo, four score digit actors (5 digits)
 
 
 # A 16px actor standing on a surface uses y = top - 2.
@@ -162,7 +165,8 @@ SEGMENTS = [
         "floor": [(0, SEG_W - 1, FLOOR_TOP)],
         "raised": [(16, 30, 12), (42, 54, 13), (74, 88, 12), (108, 122, 11), (136, 150, 13)],
         "pits": [(62, 64)],
-        "blobs": [(10, 13), (23, 10), (36, 13), (81, 10)],
+        # v6: the 5-digit score HUD needs one more actor; the ledge blob at x 81 went (20-actor limit).
+        "blobs": [(10, 13), (23, 10), (36, 13)],
         "level": 1,
         "clear_to": "scene_level2",
         "chips": [(48, 11), (140, 11)],
@@ -2151,12 +2155,11 @@ def add_score(name: str, key: str, points: int) -> list:
                 "value": {
                     "type": "add",
                     "valueA": {"type": "variable", "value": SCORE_VAR},
-                    "valueB": {"type": "number", "value": points},
+                    "valueB": {"type": "number", "value": points // 10},
                 },
             },
         ),
-        # The HUD shows four digits; cap at SCORE_MAX so it never wraps to 0000.
-        # Every award is at most 1000, so the sum stays under 32767 first.
+        # Cap at SCORE_MAX (99,990 shown); awards are <= 100 tens, so no overflow.
         if_value(f"{name}-score-cap", SCORE_VAR, ">", SCORE_MAX, [set_number(f"{name}-score-max", SCORE_VAR, SCORE_MAX)]),
         *show_score(f"{name}-hud", key),
     ]
@@ -2349,7 +2352,8 @@ def _unpowered_hit(suffix: str, segment: dict, lives_symbol: str) -> list:
                     ]),
                     ])],
                 ),
-                wait_frames(f"{suffix}-hurt-grace", HURT_GRACE_FRAMES),
+                # v6: the 60-frame invulnerable grace now blinks (it was invisible).
+                *blink_player(f"{suffix}-hurt", HURT_GRACE_FRAMES // 12),
     ]
 
 
@@ -2701,7 +2705,7 @@ def exit_script(prefix: str, segment: dict) -> list:
         *add_score(f"{prefix}-bonus", key, POINTS["clear"]),
         if_value(f"{prefix}-life-up", "1", "<", 3, [event(f"{prefix}-life-inc", "EVENT_INC_VALUE", {"variable": "1"})]),
         set_number(f"{prefix}-respawn-clear", RESPAWN_VAR, 0),
-        event(f"{prefix}-clear-text", "EVENT_TEXT", {"text": f"LEVEL {level} CLEAR\nSCORE ${SCORE_VAR}$"}),
+        event(f"{prefix}-clear-text", "EVENT_TEXT", {"text": f"LEVEL {level} CLEAR\nSCORE ${SCORE_VAR}$0"}),
         go,
     ]
 
@@ -3237,6 +3241,8 @@ def build_resources(collisions: dict) -> None:
             width=64,
             height=16,
             animation_type="platform_player",
+            # v6: 12 px wide body box (art spans x 2-13), so enemy hits need visible contact.
+            bounds=PLAYER_BOUNDS,
             animations=player_animations(),
             num_tiles=8,
         ),
@@ -3253,6 +3259,8 @@ def build_resources(collisions: dict) -> None:
             animation_type="fixed",
             animations=frames_animation("enemy", 2),
             num_tiles=4,
+            # v6: hitbox fits the drawn enemy_red_blob (was the full 16x16 tile).
+            bounds=(2, 2, 12, 14),
         ),
     )
     write_json(
@@ -3313,7 +3321,7 @@ def build_resources(collisions: dict) -> None:
                 animations=fixed_animation(name),
                 num_tiles=2,
                 # The bolt is a ~7 px ball: an 8x8 centred box, so near misses miss.
-                bounds=(4, 4, 8, 8) if name == "bolt" else None,
+                bounds=(4, 4, 8, 8) if name == "bolt" else (0, 4, 16, 12),  # v6: tower box starts at its drawn top
             ),
         )
     for name, tag in (("score_digit", "scoredigit"), ("score_tens", "scoretens")):
@@ -3343,6 +3351,8 @@ def build_resources(collisions: dict) -> None:
             animation_type="fixed",
             animations=frames_animation("flyer", 2),
             num_tiles=4,
+            # v6: hitbox fits the drawn flyer (was the full 16x16 tile).
+            bounds=(1, 3, 14, 10),
         ),
     )
     write_json(
@@ -3369,6 +3379,8 @@ def build_resources(collisions: dict) -> None:
             width=64,
             height=16,
             animation_type="platform_player",
+            # v6: 12 px wide body box (art spans x 2-13), so enemy hits need visible contact.
+            bounds=PLAYER_BOUNDS,
             animations=player_animations("square-"),
             num_tiles=8,
         ),
@@ -3385,6 +3397,8 @@ def build_resources(collisions: dict) -> None:
                 width=64,
                 height=16,
                 animation_type="platform_player",
+            # v6: 12 px wide body box (art spans x 2-13), so enemy hits need visible contact.
+            bounds=PLAYER_BOUNDS,
                 animations=player_animations(shape + "-"),
                 num_tiles=8,
             ),
@@ -4914,7 +4928,7 @@ def boss_finale(seg: dict) -> list:
         hide("gone"),
         beep(f"{name}-win", 10),
         *add_score(f"{name}-bonus", BOSS_KEY, POINTS["clear"]),
-        event(f"{name}-text", "EVENT_TEXT", {"text": f"{BOSS_NAME} DEFEATED!\nSCORE ${SCORE_VAR}$"}),
+        event(f"{name}-text", "EVENT_TEXT", {"text": f"{BOSS_NAME} DEFEATED!\nSCORE ${SCORE_VAR}$0"}),
         switch_scene(f"{name}-to-win", WIN_SCENE, *MENU_PLAYER),
     ]
 
@@ -5215,7 +5229,7 @@ def write_boss(painted: dict, bg_ids: list[str], sprite_ids: list[str]) -> None:
                 switch_scene("win-to-title", "scene_title", *MENU_PLAYER),
             ]),
             beep("win-jingle-1", 6), beep("win-jingle-2", 8), beep("win-jingle-3", 10),
-            event("win-score", "EVENT_TEXT", {"text": f"THANKS FOR PLAYING\nSCORE ${SCORE_VAR}$"}),
+            event("win-score", "EVENT_TEXT", {"text": f"THANKS FOR PLAYING\nSCORE ${SCORE_VAR}$0"}),
         ],
     ))
     write_json(win_dir / "actors" / "grok_bot.gbsres", actor(
