@@ -171,3 +171,11 @@ actors drawn may be dropped for a frame (not seen in PyBoy tests).
 - **Hits from empty space.** Every enemy and the player used a full 16x16 box, so contact registered up to ~6 px before the art touched. The boxes now fit the art: blob (2,2,12,14), flyer (1,3,14,10), tower (0,4,16,12), player 12 px wide (2,0,12,16). Contact now starts ~2 px before the art touches, down from ~6 px.
 - The extra HUD actor dropped one ledge blob in Level 1 High Ridge (20-actor limit), and the generator's fit step trimmed 4 electrons in the densest levels (30 → 26).
 - Ammo was audited with no bugs found: it clamps at 0, caps at 8, the HUD redraws on every change, it resets on a new level and on a hit or death, it is 4 at boss entry, and it is spent only when a shot launches (the 5-projectile pool can't fill: ≤1 shot plus ≤3 sparks or bolts).
+
+## v6: hit, ammo and score audit (PyBoy-only, untested on hardware)
+
+- **Score cap:** the score was clamped at 9,990 (`SCORE_MAX`) because the HUD showed only 4 digits. Raw points also could not pass 32,767, since GB Studio variables are 16-bit signed. The score variable now counts tens of points. The HUD shows 5 digits (one more pinned actor at tile 6) and the cap is 99,990. The score already carried across levels and respawns, and it resets only on a new run. There is no high score. The cart has battery RAM, but nothing is saved to it.
+- **Invisible invulnerability:** an unpowered hit waited 60 frames with no feedback (only the power-loss hit blinked). It now blinks for the same 60 frames.
+- **Hitboxes:** blob, flyer and Bolt Tower boxes were the full 16x16 tile. They now fit the art: blob (2,2,12,14), flyer (1,3,14,10), tower (0,4,16,12). The player box is unchanged because it is also the terrain box.
+- **Actor budget:** the extra HUD actor meant Level 1 High Ridge was over the 20-actor limit, so its ledge blob at x 81 was removed. The trim in levels 2-9 dropped 4 late electrons.
+- **Audited, no change needed:** the ammo cap and HUD, firing at 0, the projectile pool (5 slots, never full), lock handling, roadster, win and fade guards, and boss hazards.
