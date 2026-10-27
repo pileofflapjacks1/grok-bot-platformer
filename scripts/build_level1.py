@@ -193,7 +193,7 @@ SEGMENTS = [
 #   B pit (6 floor + pit + 3)       C 16 float staircase (12/9/12), pit from L7
 #   D 12 flyer lane                 E 12 bolt tower on a low ledge
 # Every level opens with F then the chip (the validator wants two blobs before
-# the chip and electrons after it) and ends on 14 tiles of floor with a flag.
+# the chip and electrons after it) and ends on 14 tiles of floor with a roadster.
 LEVEL_NAMES = {
     2: "Sky Steps",
     3: "Bolt Bluffs",
@@ -290,12 +290,25 @@ def build_level(level: int, index: int) -> dict:
             turret.append((x + 5, 11))
             x += 12
     width = x + LEVEL_TAIL
-    # Fit MAX_ACTORS (HUD included): drop late electrons, then late flyers.
-    while HUD_ACTORS + len(blobs + chips + electrons + flyers + turret) > MAX_ACTORS:
+    # Roadster at the end (same ending as Level 1 High Ridge). Counts toward
+    # the 20-actor cap, so fit drops an electron/flyer to make room.
+    roadster = [(width - 12, FLOOR_TOP - 2)]
+    # Keep the last screen clear of other actors so roadster (4) + player (2)
+    # never shares a scanline with blobs/flyers/towers (peak would hit 12+).
+    clear_from = roadster[0][0] - 20  # full screen before the car
+    blobs = [(bx, by) for bx, by in blobs if bx < clear_from]
+    electrons = [(ex, ey) for ex, ey in electrons if ex < clear_from]
+    flyers = [(fx, fy) for fx, fy in flyers if fx < clear_from]
+    turret = [(tx, ty) for tx, ty in turret if tx < clear_from]
+    while HUD_ACTORS + len(blobs + chips + electrons + flyers + turret) + len(roadster) > MAX_ACTORS:
         if len(electrons) > 1:
             electrons.pop()
-        else:
+        elif flyers:
             flyers.pop()
+        elif len(blobs) > 2:
+            blobs.pop()
+        else:
+            raise SystemExit(f"level {level} cannot fit a roadster under the actor cap")
     return {
         "key": f"l{level}",
         "level": level,
@@ -311,7 +324,8 @@ def build_level(level: int, index: int) -> dict:
         "parallax": LEVEL_PARALLAX,
         "play_row": LEVEL_PLAY_ROW,
         "decor_rows": (1, 2),
-        "goal": True,
+        # Roadster ending (like Level 1); no goal flag.
+        "goal": False,
         "floor": [(0, width - 1, FLOOR_TOP)],
         "raised": raised,
         "pits": pits,
@@ -321,6 +335,7 @@ def build_level(level: int, index: int) -> dict:
         "electrons": electrons,
         "flyers": flyers,
         "turret": turret,
+        "roadster": roadster,
         "next": None,
         "clear_to": level_symbol(level + 1),
     }
@@ -2587,15 +2602,19 @@ def clear_hazards(name: str, segment: dict) -> list:
     return steps
 
 
-def roadster_script(name: str, segment: dict) -> list:
-    """Level complete: hop in, drive off, lift off up and away, LEVEL CLEAR."""
+def roadster_script(name: str, segment: dict, actor_id: str = "$self$") -> list:
+    """Level complete: hop in, drive off, lift off up and away, LEVEL CLEAR.
+
+    actor_id is $self$ when this is the roadster's On Hit script, or an
+    explicit actor id when the boss finale triggers the same cutscene.
+    """
 
     def drive(tag: str, dx: int, dy: int, kind: str) -> dict:
         return event(
             f"{name}-{tag}",
             "EVENT_ACTOR_MOVE_RELATIVE",
             {
-                "actorId": "$self$",
+                "actorId": actor_id,
                 "x": {"type": "number", "value": dx},
                 "y": {"type": "number", "value": dy},
                 "units": "tiles",
@@ -2607,7 +2626,7 @@ def roadster_script(name: str, segment: dict) -> list:
 
     return [
         set_number(f"{name}-done-first", LEVEL_DONE, 1),
-        event(f"{name}-once", "EVENT_ACTOR_COLLISIONS_DISABLE", {"actorId": "$self$"}),
+        event(f"{name}-once", "EVENT_ACTOR_COLLISIONS_DISABLE", {"actorId": actor_id}),
         event(f"{name}-freeze", "EVENT_PLATFORMER_STATE_SET", {"state": "blank"}),
         # Hold the hurt lock for the whole cutscene (like the pit): a bolt
         # still reaches the player in blank state and its knockback would
@@ -2662,7 +2681,7 @@ def roadster_script(name: str, segment: dict) -> list:
                 event(
                     f"{name}-flip{index}",
                     "EVENT_ACTOR_SET_FRAME",
-                    {"actorId": "$self$", "frame": {"type": "number", "value": index}},
+                    {"actorId": actor_id, "frame": {"type": "number", "value": index}},
                 ),
                 wait_frames(f"{name}-flip-wait{index}", 4),
             )
@@ -2673,11 +2692,11 @@ def roadster_script(name: str, segment: dict) -> list:
         # top. It rises to row 2 (just under the HUD), blinks out and is hidden
         # there, which reads as flying off instead of parking on the edge.
         drive("away", 1, -8, "diagonal"),
-        event(f"{name}-flash-off", "EVENT_ACTOR_HIDE", {"actorId": "$self$"}),
+        event(f"{name}-flash-off", "EVENT_ACTOR_HIDE", {"actorId": actor_id}),
         wait_frames(f"{name}-flash-wait", 4),
-        event(f"{name}-flash-on", "EVENT_ACTOR_SHOW", {"actorId": "$self$"}),
+        event(f"{name}-flash-on", "EVENT_ACTOR_SHOW", {"actorId": actor_id}),
         wait_frames(f"{name}-flash-wait2", 4),
-        event(f"{name}-gone", "EVENT_ACTOR_HIDE", {"actorId": "$self$"}),
+        event(f"{name}-gone", "EVENT_ACTOR_HIDE", {"actorId": actor_id}),
         beep(f"{name}-whoosh", 10),
         wait_frames(f"{name}-beat", 20),
         # LEVEL 1 CLEAR is shown once, here or by the fallback exit, never both.
@@ -2822,11 +2841,11 @@ def segment_init(segment: dict) -> list:
             {"musicId": MUSIC_ID, "loop": True},
         ), set_number(f"{key}-music-on", MUSIC_VAR, 1)])
     ]
-    # Chip rule (v4): firing needs the chip collected in THIS level and not
-    # lost since. A new level (2-9) starts with chip 0, ammo 0, unpowered; a
+    # Chip rule (v4/v7): firing needs the chip collected in THIS level and not
+    # lost since. A new level (2-10) starts with chip 0, ammo 0, unpowered; a
     # respawn after a death starts the same way; a hit while powered clears
-    # the chip with the power and ammo (lose_power). The boss arena sets
-    # chip 1 itself: there, ammo from blobs is the only rule.
+    # the chip with the power and ammo (lose_power). The boss arena also
+    # places a chip pickup; ammo only comes from defeated blobs.
     if segment.get("level_start"):
         script.append(if_value(f"{key}-level-arm-reset", RESPAWN_VAR, "==", 0, [
             set_number(f"{key}-level-chip0", "2", 0),
@@ -4812,6 +4831,11 @@ def draw_pips(name: str) -> list:
 HITBOX = "actor_boss-hitbox"  # v4: the MUSE sprite actor itself (body + hitbox)
 BOSS_BLOBS = ("actor_boss-blob1", "actor_boss-blob2")
 BOSS_DROPS = ("actor_boss-drop1", "actor_boss-drop2")
+BOSS_ROADSTER = "actor_boss-roadster"
+BOSS_CHIP = "actor_boss-chip"
+# Park inactive pool actors off the 20-tile arena so they cannot flash on
+# screen for a frame before boss_init deactivates them (appear-then-gone).
+BOSS_PARK = (22, 0)
 # v5 sprite MUSE: one 24x32 metasprite actor (6 hardware sprites) moved by
 # the engine's own Move To at a fixed speed, so every tile moves together
 # in actors_update on the same frame and the script never touches x mid-walk.
@@ -4836,9 +4860,15 @@ def place_boss(name: str) -> list:
 
 
 def boss_segment() -> dict:
+    # Chip on the mid-right ledge (tiles 18-19, row 7 → stand y=5), reachable
+    # by jump and clear of the HUD/pip band; roadster waits off-screen until
+    # MUSE is defeated, then the Level-1 ending cutscene runs.
     return {
         "key": BOSS_KEY, "level": 10, "name": f"Level 10 {BOSS_NAME}", "symbol": BOSS_SCENE,
-        "reset": False, "pits": [], "blobs": [], "chips": [], "electrons": [],
+        "folder": "level_10_boss",
+        "reset": False, "level_start": True, "pits": [], "blobs": [],
+        "chips": [(18, 5)], "electrons": [], "roadster": [],
+        "clear_to": WIN_SCENE,
     }
 
 
@@ -4852,7 +4882,10 @@ def launch_spark(name: str, angle: int, x: int, y: int) -> dict:
         "actorId": uid(HITBOX), "x": x, "y": y,
         "directionType": "angle", "angle": angle, "otherActorId": "$self$", "direction": "left",
         "speed": 2, "animSpeed": 15, "lifeTime": BURST_LIFE, "initialOffset": 0,
-        "loopAnim": True, "destroyOnHit": True, "collisionGroup": "3", "collisionMask": ["player"],
+        # destroyOnHit False: during the 60-frame hurt blink a True flag ate
+        # every spark on contact with no damage, which felt like "electrons
+        # don't hurt". Sparks keep their short lifeTime and still collide.
+        "loopAnim": True, "destroyOnHit": False, "collisionGroup": "3", "collisionMask": ["player"],
     })
 
 
@@ -4900,25 +4933,54 @@ def boss_release(name: str) -> list:
 
 def boss_defeat(name: str, seg: dict) -> list:
     """Hit handler side of the defeat: freeze the fight at once; the flash
-    and the switch to the win scene run in the boss thread (boss_finale)."""
+    and the roadster ending run in the boss thread (boss_finale)."""
     steps = [
         set_number(f"{name}-state", B_STATE, 2),
         set_number(f"{name}-done", LEVEL_DONE, 1),
         no_fire(f"{name}-nofire"),
     ]
-    for k in range(2):
+    for k in range(len(BOSS_BLOBS)):
+        steps.append(event(f"{name}-blob{k}-off", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(BOSS_BLOBS[k])}))
+    for k in range(len(BOSS_DROPS)):
+        steps.append(event(f"{name}-drop{k}-off", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(BOSS_DROPS[k])}))
+    steps += [
+        event(f"{name}-chip-off", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(BOSS_CHIP)}),
+        event(f"{name}-stop", "EVENT_ACTOR_MOVE_CANCEL", {"actorId": uid(HITBOX)}),
+        set_muse_frame(f"{name}-cheeks-off", 1),
+        beep(f"{name}-boom", 1),
+    ]
+    return steps
+
+
+def boss_clear_pool(name: str) -> list:
+    """Hide every pooled enemy/pickup so the roadster ending stays clean."""
+    steps = [
+        event(f"{name}-muse-nocol", "EVENT_ACTOR_COLLISIONS_DISABLE", {"actorId": uid(HITBOX)}),
+        event(f"{name}-muse-hide", "EVENT_ACTOR_HIDE", {"actorId": uid(HITBOX)}),
+        event(f"{name}-muse-off", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(HITBOX)}),
+        event(f"{name}-chip-off", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(BOSS_CHIP)}),
+        event(f"{name}-player-nocol", "EVENT_ACTOR_COLLISIONS_DISABLE", {"actorId": "player"}),
+    ]
+    for k, sym in enumerate(BOSS_BLOBS):
         steps += [
-            event(f"{name}-blob{k}-off", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(BOSS_BLOBS[k])}),
-            event(f"{name}-drop{k}-off", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(BOSS_DROPS[k])}),
+            event(f"{name}-blob{k}-nocol", "EVENT_ACTOR_COLLISIONS_DISABLE", {"actorId": uid(sym)}),
+            event(f"{name}-blob{k}-hide", "EVENT_ACTOR_HIDE", {"actorId": uid(sym)}),
+            event(f"{name}-blob{k}-off", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(sym)}),
         ]
-    return steps + [event(f"{name}-stop", "EVENT_ACTOR_MOVE_CANCEL", {"actorId": uid(HITBOX)}),
-                    set_muse_frame(f"{name}-cheeks-off", 1), beep(f"{name}-boom", 1)]
+    for k, sym in enumerate(BOSS_DROPS):
+        steps += [
+            event(f"{name}-drop{k}-hide", "EVENT_ACTOR_HIDE", {"actorId": uid(sym)}),
+            event(f"{name}-drop{k}-off", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(sym)}),
+        ]
+    return steps
 
 
 def boss_finale(seg: dict) -> list:
+    """MUSE flash, then the same roadster kickflip ending as Level 1."""
     name = "boss-finale"
     hide = lambda t: event(f"{name}-{t}", "EVENT_ACTOR_HIDE", {"actorId": uid(HITBOX)})
     show = lambda t: event(f"{name}-{t}", "EVENT_ACTOR_SHOW", {"actorId": uid(HITBOX)})
+    car = uid(BOSS_ROADSTER)
     return [
         event(f"{name}-nocol", "EVENT_ACTOR_COLLISIONS_DISABLE", {"actorId": uid(HITBOX)}),
         set_muse_frame(f"{name}-cheeks-off", 1),
@@ -4926,10 +4988,20 @@ def boss_finale(seg: dict) -> list:
         *[e for i in range(3) for e in (hide(f"off{i}"), wait_frames(f"{name}-w{i}a", 8),
                                         show(f"on{i}"), wait_frames(f"{name}-w{i}b", 8))],
         hide("gone"),
+        *boss_clear_pool(name),
         beep(f"{name}-win", 10),
-        *add_score(f"{name}-bonus", BOSS_KEY, POINTS["clear"]),
-        event(f"{name}-text", "EVENT_TEXT", {"text": f"{BOSS_NAME} DEFEATED!\nSCORE ${SCORE_VAR}$0"}),
-        switch_scene(f"{name}-to-win", WIN_SCENE, *MENU_PLAYER),
+        event(f"{name}-text", "EVENT_TEXT", {"text": f"{BOSS_NAME} DEFEATED!"}),
+        # Bring the roadster onto the floor in front of Grok Bot and run the
+        # Level-1 ending (invulnerable, hazards gone, kickflip, fly off).
+        event(f"{name}-car-pos", "EVENT_ACTOR_SET_POSITION", {
+            "actorId": car, "x": {"type": "number", "value": 8},
+            "y": {"type": "number", "value": FLOOR_TOP - 2}, "units": "tiles"}),
+        event(f"{name}-car-on", "EVENT_ACTOR_ACTIVATE", {"actorId": car}),
+        event(f"{name}-car-show", "EVENT_ACTOR_SHOW", {"actorId": car}),
+        event(f"{name}-car-frame", "EVENT_ACTOR_SET_FRAME", {
+            "actorId": car, "frame": {"type": "number", "value": 0}}),
+        wait_frames(f"{name}-car-beat", 20),
+        *roadster_script(f"{name}-roadster", seg, actor_id=car),
     ]
 
 
@@ -4982,6 +5054,22 @@ def boss_damage(name: str, seg: dict, stomp: bool) -> list:
 STOMP_DY = MUSE_BOUNDS[1] + 4  # player base top at most 4 px under the hitbox top
 
 
+def rearm_actor_collision(name: str, actor_id: str = "$self$") -> list:
+    """GB Studio On Hit fires on enter only. After a blocked or finished hurt
+    window Grok Bot may still overlap; pulse collisions so the next check
+    re-fires once the hurt lock and post-stomp invuln are clear."""
+    return [
+        loop_while(f"{name}-wait", f"{v(HURT_LOCK)} != 0 || {v(B_INV)} != 0", [
+            wait_frames(f"{name}-tick", 1),
+        ]),
+        if_value(f"{name}-still-live", B_STATE, "!=", 2, [
+            event(f"{name}-off", "EVENT_ACTOR_COLLISIONS_DISABLE", {"actorId": actor_id}),
+            wait_frames(f"{name}-gap", 1),
+            event(f"{name}-on", "EVENT_ACTOR_COLLISIONS_ENABLE", {"actorId": actor_id}),
+        ]),
+    ]
+
+
 def boss_contact(seg: dict) -> list:
     """MUSE touched by Grok Bot. A landing (falling, feet near the top of
     the hitbox) deals damage unless MUSE is stomp-immune (then a safe
@@ -4995,17 +5083,23 @@ def boss_contact(seg: dict) -> list:
         "__collapseElse": False,
     }, {"true": [if_expr("boss-if-high", f"{v(P_Y)} <= {v(H_Y)} + ({STOMP_DY})", landing, hurt)],
         "false": hurt})
-    return [unless_done("boss-contact-done", [if_value("boss-contact-live", B_STATE, "==", 1, [
+    # State 0 (entering) and 1 (fighting) both hurt; only defeat (2) is inert.
+    # Previously state 0 skipped all contact, so walking into MUSE on entry
+    # did nothing — a common "I touched it and took no damage" report.
+    # After the hit (or a blocked one during invuln), rearm so a still-
+    # overlapping touch hurts again once the grace window ends.
+    return [unless_done("boss-contact-done", [if_value("boss-contact-live", B_STATE, "!=", 2, [
         if_expr("boss-contact-free", f"{v(HURT_LOCK)} == 0 && {v(B_INV)} == 0", [
             event("boss-py", "EVENT_ACTOR_GET_POSITION", {"actorId": "player", "vectorX": P_X, "vectorY": P_Y, "units": "pixels"}),
             event("boss-hy", "EVENT_ACTOR_GET_POSITION", {"actorId": "$self$", "vectorX": "25", "vectorY": H_Y, "units": "pixels"}),
             stomp_or_hurt,
         ]),
+        *rearm_actor_collision("boss-rearm"),
     ])])]
 
 
 def boss_shot(seg: dict) -> list:
-    return [unless_done("boss-shot-done", [if_value("boss-shot-live", B_STATE, "==", 1, [
+    return [unless_done("boss-shot-done", [if_value("boss-shot-live", B_STATE, "!=", 2, [
         if_value("boss-shot-ready", B_SHOT_CD, "==", 0, boss_damage("boss-shot", seg, False)),
     ])])]
 
@@ -5034,16 +5128,20 @@ def boss_blob_kill(tag: str, k: int, bounce: bool) -> list:
 
 
 def boss_blob_contact(k: int, seg: dict) -> list:
+    """Released blob contact. Stomp always works; side touch hurts unless the
+    player is in a grace window (hurt lock or post-stomp B_INV)."""
     tag = f"boss-blob{k + 1}"
+    hurt = hurt_steps(tag, seg)
     falling = event(f"{tag}-if-falling", "EVENT_IF", {
         "condition": {"type": "gt", "valueA": {"type": "engineField", "value": "plat_vel_y"},
                       "valueB": {"type": "number", "value": 0}},
         "__collapseElse": False,
     }, {"true": boss_blob_kill(f"{tag}-fall", k, True),
-        "false": [if_value(f"{tag}-no-stomp", B_INV, "==", 0, hurt_steps(tag, seg))]})
-    return [unless_done(f"{tag}-done", [event(f"{tag}-if", "EVENT_IF_ACTOR_RELATIVE_TO_ACTOR", {
+        "false": [if_expr(f"{tag}-side-free", f"{v(HURT_LOCK)} == 0 && {v(B_INV)} == 0", hurt)]})
+    body = event(f"{tag}-if", "EVENT_IF_ACTOR_RELATIVE_TO_ACTOR", {
         "actorId": "player", "operation": "up", "otherActorId": "$self$", "__collapseElse": False,
-    }, {"true": boss_blob_kill(f"{tag}-above", k, True), "false": [falling]})])]
+    }, {"true": boss_blob_kill(f"{tag}-above", k, True), "false": [falling]})
+    return [unless_done(f"{tag}-done", [body, *rearm_actor_collision(f"{tag}-rearm")])]
 
 
 def imm_tick(name: str) -> list:
@@ -5124,10 +5222,12 @@ def boss_init(seg: dict) -> list:
     script = [if_value("boss-hp-fresh", RESPAWN_VAR, "==", 0, [set_number("boss-hp-full", B_HP, BOSS_HP)])]
     script += segment_init(seg)
     script += [
-        # Boss rule: no chip needed in the arena; ammo (from blobs) is the
-        # only limit. Grok Bot walks in with at least 4 electrons.
-        set_number("boss-chip", "2", 1),
-        if_value("boss-ammo-min", "0", "<", 4, [set_number("boss-ammo4", "0", 4)]),
+        # Boss rule (v7): start with no chip and 0 ammo. A silicon chip sits
+        # on the top ledge; electrons only come from defeated released blobs.
+        set_number("boss-chip", "2", 0),
+        set_number("boss-ammo0", "0", 0),
+        set_number("boss-power0", POWER_VAR, 0),
+        *player_palette_events("boss-unpower-pal"),
         show_counter("boss-ammo-hud", f"actor_ammo_{BOSS_KEY}", "0"),
         set_number("boss-x", B_X, MUSE_ENTRY),
         set_number("boss-dir0", B_DIR, 1),
@@ -5153,12 +5253,13 @@ def boss_init(seg: dict) -> list:
               {"timer": 2, "duration": 16 / 60, "units": "frames", "frames": 16},
               {"script": imm_tick("boss-timer")}),
     ]
-    for k in range(2):
-        script += [
-            event(f"boss-init-blob{k}", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(BOSS_BLOBS[k])}),
-            event(f"boss-init-drop{k}", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(BOSS_DROPS[k])}),
-        ]
+    for k in range(len(BOSS_BLOBS)):
+        script.append(event(f"boss-init-blob{k}", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(BOSS_BLOBS[k])}))
+    for k in range(len(BOSS_DROPS)):
+        script.append(event(f"boss-init-drop{k}", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(BOSS_DROPS[k])}))
     script += [
+        event("boss-init-car", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(BOSS_ROADSTER)}),
+        # Chip stays active on the ledge so Grok Bot can collect it.
         *draw_pips("boss-pips"),
         *place_boss("boss-park"),
         event("boss-thread", "EVENT_THREAD_START", {"variable": "T1", "__scriptTabs": "true"}, {"true": boss_loop(seg)}),
@@ -5183,7 +5284,8 @@ def write_boss(painted: dict, bg_ids: list[str], sprite_ids: list[str]) -> None:
         width=CLEAR_W, height=CLEAR_H, background_symbol="bg_level10",
         palette_ids=boss_bg, sprite_palette_ids=boss_sprites, script=boss_init(seg),
         collisions=painted["level10"]["collisions"],
-        player_hit3=[if_value("boss-spark-no-stomp", B_INV, "==", 0, hurt_steps("boss-spark", seg))],
+        player_hit3=[if_expr("boss-spark-free", f"{v(HURT_LOCK)} == 0 && {v(B_INV)} == 0",
+                             hurt_steps("boss-spark", seg))],
     ))
     n = 0
 
@@ -5202,14 +5304,32 @@ def write_boss(painted: dict, bg_ids: list[str], sprite_ids: list[str]) -> None:
     add("hitbox.gbsres", name=f"{BOSS_NAME}", symbol=HITBOX, x=MUSE_ENTRY // 8, y=MUSE_Y // 8,
         sprite_symbol="sprite_muse_body", palette_name="Muse Pink", script=boss_contact(seg),
         hit1_script=boss_shot(seg), animate=False, collision_group="1", move_speed=1)
+    # Pool actors start parked off-screen. boss_init deactivates them; release
+    # / kill scripts move and activate them. Parking stops the one-frame
+    # "appear then vanish" flash at scene start (GB Studio boots every actor
+    # active before the scene script runs).
     for k, symbol in enumerate(BOSS_BLOBS):
-        add(f"blob_{k + 1}.gbsres", name=f"Released Blob {k + 1}", symbol=symbol, x=6 + 6 * k, y=FLOOR_TOP - 2,
+        add(f"blob_{k + 1}.gbsres", name=f"Released Blob {k + 1}", symbol=symbol,
+            x=BOSS_PARK[0], y=BOSS_PARK[1],
             sprite_symbol="sprite_enemy_red_blob", palette_name="Blob Red", script=boss_blob_contact(k, seg),
             update_script=enemy_update(f"boss-blob{k + 1}"), hit1_script=boss_blob_kill(f"boss-blob{k + 1}-shot", k, False))
+    # 1-tile spark orb for drops (not the 2-tile electron): Muse (3) + player
+    # (2) + blob (1) + two 2-tile drops overflowed the 10/line limit and made
+    # sprites flicker out. One-tile drops keep the floor row at <= 9.
     for k, symbol in enumerate(BOSS_DROPS):
-        add(f"drop_{k + 1}.gbsres", name=f"Electron Drop {k + 1}", symbol=symbol, x=4 + 10 * k, y=FLOOR_TOP - 3,
-            sprite_symbol="sprite_electron", palette_name="Electron Blue",
+        add(f"drop_{k + 1}.gbsres", name=f"Electron Drop {k + 1}", symbol=symbol,
+            x=BOSS_PARK[0], y=BOSS_PARK[1],
+            sprite_symbol="sprite_muse_spark", palette_name="Electron Blue",
             script=electron_script(f"{key}-drop{k + 1}", f"actor_ammo_{key}"), collision_group="2")
+    # Silicon chip on the mid-right ledge (row 7 → stand y = 5), clear of HUD.
+    add("silicon_chip.gbsres", name="Silicon Chip", symbol=BOSS_CHIP, x=18, y=5,
+        sprite_symbol="sprite_silicon_chip", palette_name="Chip Gray",
+        script=chip_script(f"{key}-chip"), collision_group="2")
+    # Roadster waits off-screen; boss_finale activates it for the Level-1 ending.
+    add("roadster.gbsres", name="Roadster", symbol=BOSS_ROADSTER,
+        x=BOSS_PARK[0], y=BOSS_PARK[1],
+        sprite_symbol="sprite_roadster", palette_name="Roadster White",
+        script=[], animate=False, collision_group="2")
     if n > MAX_ACTORS:
         raise SystemExit(f"boss arena has {n} actors")
     # Win screen.
@@ -5239,13 +5359,12 @@ def write_boss(painted: dict, bg_ids: list[str], sprite_ids: list[str]) -> None:
 
 
 def boss_scanline_note() -> str:
-    # HUD row: 2+2+4 = 8 (+2 for a high-jumping player) as in the levels.
-    # Mid screen worst case: cheeks 2 (one tile each), player 2, player shot
-    # 2, sparks are one tile each, launched 5 frames apart on rows 8 px
-    # apart, so at most 2 share a line: 8.
-    # v4 sprite MUSE: <= 6 tiles per row (cheeks are inside the body
-    # sprite), player 2, a spark 1, a player shot 1-2: <= 10 on MUSE's rows.
-    return f"boss arena: HUD rows 10/10; sprite MUSE {MUSE_W}x{MUSE_H} = {len(MUSE_TILES)} OAM tiles, <= 3 per row"
+    # Floor row worst case after v7: Muse 3 + player 2 + blob 1 + drop 1
+    # (1-tile spark orb) + spark projectile 1 = 8; with a player shot (+2) = 10.
+    # Two 2-tile electron drops used to push the same row to 11 and flicker.
+    return (f"boss arena: HUD rows 10/10; sprite MUSE {MUSE_W}x{MUSE_H} = "
+            f"{len(MUSE_TILES)} OAM tiles, <= 3 per row; floor peak 10/10 "
+            f"(1-tile ammo drops)")
 
 
 def main() -> None:

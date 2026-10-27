@@ -34,7 +34,8 @@ and shot checks; two small cheek sprites add colour. HP (8) is shown as
 heart pips in the HUD. Each landing fires a staggered burst of 3 one-tile
 sparks; every 2nd hop releases a blob at the boss edge facing Grok Bot.
 Defeated blobs drop ammo, and the player can shoot the boss.
-Defeat: shake, flash, "MUSE DEFEATED!" and the win scene.
+Defeat: shake, flash, "MUSE DEFEATED!", then the Level-1 roadster
+kickflip ending, then the win scene.
 
 ### Why hops, and the speed numbers (PyBoy, game frames per 900 ticks)
 Each REPLACE_TILE_XY costs roughly 1/7 of a frame (a VRAM-safe tile copy),
@@ -131,8 +132,8 @@ Firing needs the chip collected in the current level and not lost since:
 - A hit while powered clears power, ammo and chip (so chip == glow).
 - Moving from Green Hills to High Ridge (same level) keeps it.
 - The debug warp no longer grants the chip.
-- Boss arena exception: chip is set on entry; ammo from blobs is the only
-  rule (and at least 4 electrons on entry).
+- Boss arena (v7): chip 0 and ammo 0 on entry; a silicon chip sits on the
+  top ledge; ammo only from defeated blobs (no free 4 electrons).
 v3 bug: the chip lasted "for the run" (across levels, after a hit and after
 a death), and the debug warp set it, so Grok Bot could fire with no glow.
 
@@ -172,3 +173,28 @@ actors drawn may be dropped for a frame (not seen in PyBoy tests).
 - The extra HUD actor dropped one ledge blob in Level 1 High Ridge (20-actor limit), and the generator's fit step trimmed 4 electrons in the densest levels (30 → 26).
 - Ammo was audited with no bugs found: it clamps at 0, caps at 8, the HUD redraws on every change, it resets on a new level and on a hit or death, it is 4 at boss entry, and it is spent only when a shot launches (the 5-projectile pool can't fill: ≤1 shot plus ≤3 sparks or bolts).
 
+
+
+## v7 — roadster endings + Muse fight fixes (PyBoy-only, untested on hardware)
+
+- **Levels 2-9** end like Level 1: a roadster at the far floor; touching it
+  clears hazards, makes Grok Bot invulnerable, kickflips and flies off, then
+  LEVEL N CLEAR. The goal flag is gone. Actor fit drops one extra electron
+  or flyer so the roadster still fits under the 20-actor cap.
+- **Level 10** after MUSE is defeated: same roadster cutscene, then the win
+  scene.
+- **Appear-then-disappear:** released blobs and ammo drops used to boot on
+  screen for a frame before `boss_init` deactivated them. They now park at
+  tile (22,0) off the arena. Ammo drops also use the 1-tile spark orb (not
+  the 2-tile electron) so Muse+player+blob+drops stay at <=10 sprites/line.
+- **Missed damage:** MUSE contact and shots were ignored while `B_STATE==0`
+  (walk-in). Contact now runs for any state other than defeat. Blob side
+  hits and spark hits also require both the hurt lock and post-stomp
+  invuln (`B_INV`) to be clear, matching MUSE's own check. On Hit is
+  enter-only: after a grace window (or a blocked touch) collisions are
+  pulsed so a still-overlapping Muse/blob touch hurts again. Boss sparks
+  no longer use `destroyOnHit` (the blink window was eating them with no
+  damage).
+- **Chip/ammo:** boss entry no longer grants chip or 4 ammo. A silicon chip
+  is on the mid-right ledge (clear of the HUD); electrons drop from
+  defeated blobs only.
