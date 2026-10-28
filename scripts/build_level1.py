@@ -92,10 +92,12 @@ SCORE_VAR = "8"
 # thousands, hundreds, and "tens + a fixed 0" (every award is a multiple of
 # 10). The single-digit frames leave the right 8 px blank, which GB Studio
 # drops from the frame, so those two actors cost 1 hardware sprite each.
-SCORE_AT = 7
+SCORE_AT = 6
 # Highest score the HUD can show: its last digit is a fixed 0 (awards are multiples of 10).
-SCORE_MAX = 9990
-SCORE_DIGITS = (("k", 1000, "sprite_score_digit"), ("h", 100, "sprite_score_digit"), ("t", 10, "sprite_score_tens"))
+# v6: SCORE_VAR counts tens of points (GB Studio vars are 16-bit signed, so
+# raw points would overflow at 32767). 9999 tens = 99,990 on a 5-digit HUD.
+SCORE_MAX = 9999
+SCORE_DIGITS = (("m", 1000, "sprite_score_digit"), ("k", 100, "sprite_score_digit"), ("h", 10, "sprite_score_digit"), ("t", 1, "sprite_score_tens"))
 POINTS = {"blob": 100, "flyer": 200, "turret": 500, "electron": 10, "chip": 1000, "clear": 1000}
 VIOLET = (152, 160, 224, 255)  # mid band: the body slot of Flyer Violet
 # Screen bands. Speeds are GB Studio parallax values: 0 is normal, 2 is 1/4, 4 is 1/16.
@@ -110,6 +112,19 @@ PLAY_ROW = 10
 
 def world_x(index: int) -> int:
     return 80 + index * (SEG_W * 8 + SCENE_GAP)
+
+
+def seg_w(segment: dict) -> int:
+    """Scene width in tiles (Level 1 halves are SEG_W; later levels set their own)."""
+    return segment.get("width", SEG_W)
+
+
+# Ammo badge cap. It was electron_total() when Level 1 was the whole game
+# (8); it stays 8 so the badge keeps its 9 frames now that ammo carries over
+# ten levels.
+AMMO_MAX = 8
+PLAYER_BOUNDS = (2, 0, 12, 16)
+HUD_ACTORS = 2 + 4  # lives, ammo, four score digit actors (5 digits)
 
 
 # A 16px actor standing on a surface uses y = top - 2.
@@ -132,6 +147,7 @@ SEGMENTS = [
         "raised": [(20, 32, 12), (48, 58, 13), (90, 108, 12), (124, 140, 11), (150, 162, 13)],
         "pits": [(70, 72)],
         "blobs": [(12, 13), (26, 10), (40, 13), (99, 10)],
+        "level": 1,
         "chips": [(54, 11), (118, 13)],
         "electrons": [(60, 10), (88, 8), (94, 7), (104, 6), (146, 8)],
         "flyers": [(80, 9), (132, 7)],
@@ -149,7 +165,10 @@ SEGMENTS = [
         "floor": [(0, SEG_W - 1, FLOOR_TOP)],
         "raised": [(16, 30, 12), (42, 54, 13), (74, 88, 12), (108, 122, 11), (136, 150, 13)],
         "pits": [(62, 64)],
-        "blobs": [(10, 13), (23, 10), (36, 13), (81, 10)],
+        # v6: the 5-digit score HUD needs one more actor; the ledge blob at x 81 went (20-actor limit).
+        "blobs": [(10, 13), (23, 10), (36, 13)],
+        "level": 1,
+        "clear_to": "scene_level2",
         "chips": [(48, 11), (140, 11)],
         "electrons": [(52, 8), (78, 7), (146, 8)],
         "flyers": [(70, 9), (128, 8)],
@@ -162,7 +181,185 @@ SEGMENTS = [
         "next": None,
     },
 ]
-HUD_ACTORS = 2 + 3  # lives, ammo, three score digits
+
+# ---------------------------------------------------------------------------
+# Levels 2-9. Each is one scene built from short sections, so difficulty is a
+# recipe: later levels use wider pits, higher ledges, more flyers and towers,
+# and float staircases over open pits. Floats are top-only (collision 1), so
+# Grok Bot jumps up through them and lands on top, platformer-style. Moving
+# platforms (actor platform flags) were not tried; all floats are static.
+# Sections (letter: width):
+#   F 14 two blobs on the floor     A 14 raised ledge, blob, electron above
+#   B pit (6 floor + pit + 3)       C 16 float staircase (12/9/12), pit from L7
+#   D 12 flyer lane                 E 12 bolt tower on a low ledge
+# Every level opens with F then the chip (the validator wants two blobs before
+# the chip and electrons after it) and ends on 14 tiles of floor with a roadster.
+LEVEL_NAMES = {
+    2: "Sky Steps",
+    3: "Bolt Bluffs",
+    4: "Sunset Run",
+    5: "Amber Ridge",
+    6: "Ember Hills",
+    7: "Dusk Heights",
+    8: "Violet Peaks",
+    9: "Last Climb",
+}
+LEVEL_RECIPES = {
+    2: "FACDBA",
+    3: "FABCDAEB",
+    4: "FABCDEABF",
+    5: "FABDCEBAFD",
+    6: "FABCEDBAF",
+    7: "FBCAEBCDF",
+    8: "FBCEABCDFA",
+    9: "FCBECBADFE",
+}
+# Background themes: (ground palette, far palette). Image tiles are shared;
+# only the palette changes, so a theme costs no VRAM.
+LEVEL_THEMES = {
+    1: ("Green Hills", "Far Hills"),
+    2: ("Green Hills", "Far Hills"),
+    3: ("Green Hills", "Far Hills"),
+    4: ("Sunset Hills", "Sunset Far"),
+    5: ("Sunset Hills", "Sunset Far"),
+    6: ("Sunset Hills", "Sunset Far"),
+    7: ("Dusk Hills", "Dusk Far"),
+    8: ("Dusk Hills", "Dusk Far"),
+    9: ("Dusk Hills", "Dusk Far"),
+}
+THEME_COLORS = {
+    "Sunset Hills": ["F8D0A0", "88C858", "387830", "302018"],
+    "Sunset Far": ["F8D0A0", "F8F0D8", "E08878", "804058"],
+    "Dusk Hills": ["A8A8E8", "58B878", "286848", "181830"],
+    "Dusk Far": ["A8A8E8", "E0E0F8", "7070C0", "383070"],
+}
+# New levels scroll rows 0-2 slowly, rows 3-4 a bit faster and the rest with
+# the camera, so floats can sit as high as row 5.
+LEVEL_PARALLAX = [
+    {"height": 3, "speed": 4},
+    {"height": 2, "speed": 2},
+    {"height": 0, "speed": 0},
+]
+LEVEL_PLAY_ROW = 5
+LEVEL_TAIL = 14
+
+
+def level_symbol(level: int) -> str:
+    return f"scene_level{level}"
+
+
+def build_level(level: int, index: int) -> dict:
+    pit_w = 2 if level <= 3 else 3 if level <= 6 else 4
+    ledge = 13 if level <= 3 else 12 if level <= 6 else 11
+    raised, pits, floats = [], [], []
+    blobs, electrons, flyers, turret, chips = [], [], [], [], []
+    x = 4  # start runway
+    for i, kind in enumerate(LEVEL_RECIPES[level]):
+        if kind == "F":
+            blobs += [(x + 4, 13), (x + 10, 13)]
+            if i == 0:
+                chips.append((x + 13, 11))
+            x += 14
+        elif kind == "A":
+            raised.append((x + 1, x + 11, ledge))
+            blobs.append((x + 6, ledge - 2))
+            electrons.append((x + 6, ledge - 5))
+            x += 14
+        elif kind == "B":
+            pits.append((x + 6, x + 5 + pit_w))
+            if 4 <= level <= 6:
+                floats.append((x + 6, x + 5 + pit_w, 11))
+            if level >= 6:
+                flyers.append((x + 6 + pit_w // 2, 8))
+            x += 6 + pit_w + 3
+        elif kind == "C":
+            floats += [(x + 2, x + 5, 12), (x + 7, x + 10, 9), (x + 12, x + 15, 12)]
+            if level >= 7:
+                pits.append((x + 6, x + 11))
+                electrons.append((x + 8, 4))
+            else:
+                electrons.append((x + 8, 4))
+            if level >= 5:
+                flyers.append((x + 3, 7))
+            x += 16
+        elif kind == "D":
+            flyers.append((x + 6, 9 if level < 5 else 8))
+            x += 12
+        elif kind == "E":
+            raised.append((x + 2, x + 8, 13))
+            turret.append((x + 5, 11))
+            x += 12
+    width = x + LEVEL_TAIL
+    # Roadster at the end (same ending as Level 1 High Ridge). Counts toward
+    # the 20-actor cap, so fit drops an electron/flyer to make room.
+    roadster = [(width - 12, FLOOR_TOP - 2)]
+    # Keep the last screen clear of other actors so roadster (4) + player (2)
+    # never shares a scanline with blobs/flyers/towers (peak would hit 12+).
+    clear_from = roadster[0][0] - 20  # full screen before the car
+    blobs = [(bx, by) for bx, by in blobs if bx < clear_from]
+    electrons = [(ex, ey) for ex, ey in electrons if ex < clear_from]
+    flyers = [(fx, fy) for fx, fy in flyers if fx < clear_from]
+    turret = [(tx, ty) for tx, ty in turret if tx < clear_from]
+    while HUD_ACTORS + len(blobs + chips + electrons + flyers + turret) + len(roadster) > MAX_ACTORS:
+        if len(electrons) > 1:
+            electrons.pop()
+        elif flyers:
+            flyers.pop()
+        elif len(blobs) > 2:
+            blobs.pop()
+        else:
+            raise SystemExit(f"level {level} cannot fit a roadster under the actor cap")
+    return {
+        "key": f"l{level}",
+        "level": level,
+        "name": f"Level {level} {LEVEL_NAMES[level]}",
+        "symbol": level_symbol(level),
+        "folder": f"level_{level}",
+        "bg_symbol": f"bg_level{level}",
+        "bg_file": f"level{level}.png",
+        "index": index,
+        "reset": False,
+        "level_start": True,
+        "width": width,
+        "parallax": LEVEL_PARALLAX,
+        "play_row": LEVEL_PLAY_ROW,
+        "decor_rows": (1, 2),
+        # Roadster ending (like Level 1); no goal flag.
+        "goal": False,
+        "floor": [(0, width - 1, FLOOR_TOP)],
+        "raised": raised,
+        "pits": pits,
+        "floats": floats,
+        "blobs": blobs,
+        "chips": chips,
+        "electrons": electrons,
+        "flyers": flyers,
+        "turret": turret,
+        "roadster": roadster,
+        "next": None,
+        "clear_to": level_symbol(level + 1),
+    }
+
+
+for _level in range(2, 10):
+    SEGMENTS.append(build_level(_level, len(SEGMENTS)))
+
+
+def theme_ids(segment: dict, bg_ids: list[str]) -> list[str]:
+    ground, far = LEVEL_THEMES[segment.get("level", 1)]
+    return [uid("palette-" + ground), uid("palette-" + far)] + bg_ids[2:]
+
+
+def stand_top(segment: dict, x: int) -> int | None:
+    """Highest surface at column x, counting top-only floats."""
+    tops = [row for x0, x1, row in segment.get("floats", []) if x0 <= x <= x1]
+    floor = solid_top(segment, x)
+    if floor is not None:
+        tops.append(floor)
+    return min(tops) if tops else None
+
+
+
 
 
 def segment_bodies(segment: dict) -> list[tuple[str, int, int]]:
@@ -1002,7 +1199,7 @@ def paint_ammo() -> list[list[tuple[int, int, int, int]]]:
 
     On the Electron Blue palette, BLUE is slot 3 and E_WHITE is slot 1.
     """
-    count = electron_total() + 1
+    count = AMMO_MAX + 1
     image = blank(count * 16, 16, BLUE)
     for value in range(count):
         origin = value * 16
@@ -1200,12 +1397,100 @@ def paint_lives() -> list[list[tuple[int, int, int, int]]]:
     return image
 
 
+def float_tile() -> list[list[tuple[int, int, int, int]]]:
+    """Floating brick platform (Green Hills palette): outlined, grass lip."""
+    tile = [[DIRT for _ in range(8)] for _ in range(8)]
+    for x in range(8):
+        tile[0][x] = OUTLINE
+        tile[1][x] = GRASS_L
+        tile[7][x] = OUTLINE
+    for y in range(2, 7):
+        tile[y][0] = OUTLINE
+        tile[y][4] = OUTLINE
+    for x in range(8):
+        tile[4][x] = OUTLINE
+    return tile
+
+
+# Goal flag (Far Hills palette: sky, cloud, hill, hill shade). A pole with a
+# pennant marks the exit of Levels 2-9.
+FLAG_TOP = indexed_tile(
+    (
+        "00330000",
+        "03113000",
+        "03113000",
+        "00330000",
+        "00030000",
+        "00030000",
+        "00030000",
+        "00030000",
+    ),
+    FAR,
+)
+FLAG_CLOTH = indexed_tile(
+    (
+        "00032222",
+        "00032212",
+        "00032111",
+        "00032212",
+        "00032222",
+        "00030000",
+        "00030000",
+        "00030000",
+    ),
+    FAR,
+)
+FLAG_POLE = indexed_tile(
+    (
+        "00030000",
+        "00030000",
+        "00030000",
+        "00030000",
+        "00030000",
+        "00030000",
+        "00030000",
+        "00030000",
+    ),
+    FAR,
+)
+FLAG_BASE = indexed_tile(
+    (
+        "00030000",
+        "00030000",
+        "00030000",
+        "00030000",
+        "00333300",
+        "03222230",
+        "03222230",
+        "33333333",
+    ),
+    FAR,
+)
+
+
+def float_at(segment: dict | None, tile_x: int, tile_y: int) -> bool:
+    if not segment:
+        return False
+    return any(x0 <= tile_x <= x1 and row == tile_y for x0, x1, row in segment.get("floats", []))
+
+
+def goal_tile(segment: dict | None, tile_x: int, tile_y: int):
+    """Flag tiles for Levels 2-9: pole at width-7, rows 8..14."""
+    if not segment or not segment.get("goal"):
+        return None
+    if tile_x != seg_w(segment) - 7:
+        return None
+    return {8: FLAG_TOP, 9: FLAG_CLOTH, 14: FLAG_BASE}.get(tile_y, FLAG_POLE if 10 <= tile_y <= 13 else None)
+
+
 def paint_level(
     width: int,
     height: int,
     solid_at,
+    segment: dict | None = None,
 ) -> tuple[list[list[tuple[int, int, int, int]]], list[int], list[int]]:
     ground = {0: sky_tile(), 1: grass_tile(), 2: dirt_tile()}
+    decor_rows = segment.get("decor_rows") if segment else None
     image = blank(width * 8, height * 8, SKY)
     collisions = [0] * (width * height)
     tile_colors = [0] * (width * height)
@@ -1213,8 +1498,18 @@ def paint_level(
         for tile_x in range(width):
             top = solid_at(tile_x)
             cell = tile_y * width + tile_x
-            if top is None or tile_y < top:
+            goal = goal_tile(segment, tile_x, tile_y)
+            if goal is not None and (top is None or tile_y < top):
+                pattern = goal
+                tile_colors[cell] = 1
+            elif float_at(segment, tile_x, tile_y) and (top is None or tile_y < top):
+                # Top-only (jump-through) like a Mario cloud platform.
+                pattern = float_tile()
+                collisions[cell] = 1
+            elif top is None or tile_y < top:
                 name = decoration_name(tile_x, tile_y)
+                if name and decor_rows is not None and tile_y not in decor_rows:
+                    name = None
                 pattern = DECOR[name] if name else ground[0]
                 if name:
                     tile_colors[cell] = 1
@@ -1231,7 +1526,8 @@ def paint_level(
 
 
 def paint_segment(segment: dict) -> tuple[list[list[tuple[int, int, int, int]]], list[int], list[int]]:
-    return paint_level(SEG_W, LEVEL_H, lambda tile_x: solid_top(segment, tile_x))
+    image, collisions, colors = paint_level(seg_w(segment), LEVEL_H, lambda tile_x: solid_top(segment, tile_x), segment)
+    return image, collisions, colors
 
 
 def unique_tiles(image: list[list[tuple[int, int, int, int]]], tile: int = 8) -> int:
@@ -1874,12 +2170,11 @@ def add_score(name: str, key: str, points: int) -> list:
                 "value": {
                     "type": "add",
                     "valueA": {"type": "variable", "value": SCORE_VAR},
-                    "valueB": {"type": "number", "value": points},
+                    "valueB": {"type": "number", "value": points // 10},
                 },
             },
         ),
-        # The HUD shows four digits; cap at SCORE_MAX so it never wraps to 0000.
-        # Every award is at most 1000, so the sum stays under 32767 first.
+        # Cap at SCORE_MAX (99,990 shown); awards are <= 100 tens, so no overflow.
         if_value(f"{name}-score-cap", SCORE_VAR, ">", SCORE_MAX, [set_number(f"{name}-score-max", SCORE_VAR, SCORE_MAX)]),
         *show_score(f"{name}-hud", key),
     ]
@@ -1930,6 +2225,7 @@ def lose_power(name: str, segment: dict) -> list:
     return [
         set_number(f"{name}-unpower", POWER_VAR, 0),
         set_number(f"{name}-unpower-ammo", "0", 0),
+        set_number(f"{name}-unpower-chip", "2", 0),
         show_ammo(f"{name}-unpower-ammo-hud", f"actor_ammo_{segment['key']}"),
         *player_palette_events(f"{name}-unpower-pal"),
         beep(f"{name}-unpower-sound", 3),
@@ -2071,7 +2367,8 @@ def _unpowered_hit(suffix: str, segment: dict, lives_symbol: str) -> list:
                     ]),
                     ])],
                 ),
-                wait_frames(f"{suffix}-hurt-grace", HURT_GRACE_FRAMES),
+                # v6: the 60-frame invulnerable grace now blinks (it was invisible).
+                *blink_player(f"{suffix}-hurt", HURT_GRACE_FRAMES // 12),
     ]
 
 
@@ -2158,7 +2455,7 @@ def electron_script(name: str, ammo_symbol: str) -> list:
     # (actor_set_frame_offset: offset % frame count), so 9 would show 00.
     # Cap the count; the pickup still scores and vanishes.
     return [
-        if_value(f"{name}-cap", "0", "<", electron_total(), [
+        if_value(f"{name}-cap", "0", "<", AMMO_MAX, [
             event(f"{name}-inc", "EVENT_INC_VALUE", {"variable": "0"}),
         ]),
         show_counter(f"{name}-ammo", ammo_symbol, "0"),
@@ -2169,7 +2466,7 @@ def electron_script(name: str, ammo_symbol: str) -> list:
 
 
 def chip_script(name: str) -> list:
-    # The chip unlocks firing for the run (var 2) and powers Grok Bot up
+    # The chip unlocks firing (var 2) until the next hit, death or new level, and powers Grok Bot up
     # (var 9): the outline glows until the next hit. It does not change the jump.
     return [
         set_number(f"{name}-flag", "2", 1),
@@ -2305,15 +2602,19 @@ def clear_hazards(name: str, segment: dict) -> list:
     return steps
 
 
-def roadster_script(name: str, segment: dict) -> list:
-    """Level complete: hop in, drive off, lift off up and away, LEVEL CLEAR."""
+def roadster_script(name: str, segment: dict, actor_id: str = "$self$") -> list:
+    """Level complete: hop in, drive off, lift off up and away, LEVEL CLEAR.
+
+    actor_id is $self$ when this is the roadster's On Hit script, or an
+    explicit actor id when the boss finale triggers the same cutscene.
+    """
 
     def drive(tag: str, dx: int, dy: int, kind: str) -> dict:
         return event(
             f"{name}-{tag}",
             "EVENT_ACTOR_MOVE_RELATIVE",
             {
-                "actorId": "$self$",
+                "actorId": actor_id,
                 "x": {"type": "number", "value": dx},
                 "y": {"type": "number", "value": dy},
                 "units": "tiles",
@@ -2325,7 +2626,7 @@ def roadster_script(name: str, segment: dict) -> list:
 
     return [
         set_number(f"{name}-done-first", LEVEL_DONE, 1),
-        event(f"{name}-once", "EVENT_ACTOR_COLLISIONS_DISABLE", {"actorId": "$self$"}),
+        event(f"{name}-once", "EVENT_ACTOR_COLLISIONS_DISABLE", {"actorId": actor_id}),
         event(f"{name}-freeze", "EVENT_PLATFORMER_STATE_SET", {"state": "blank"}),
         # Hold the hurt lock for the whole cutscene (like the pit): a bolt
         # still reaches the player in blank state and its knockback would
@@ -2380,7 +2681,7 @@ def roadster_script(name: str, segment: dict) -> list:
                 event(
                     f"{name}-flip{index}",
                     "EVENT_ACTOR_SET_FRAME",
-                    {"actorId": "$self$", "frame": {"type": "number", "value": index}},
+                    {"actorId": actor_id, "frame": {"type": "number", "value": index}},
                 ),
                 wait_frames(f"{name}-flip-wait{index}", 4),
             )
@@ -2391,28 +2692,40 @@ def roadster_script(name: str, segment: dict) -> list:
         # top. It rises to row 2 (just under the HUD), blinks out and is hidden
         # there, which reads as flying off instead of parking on the edge.
         drive("away", 1, -8, "diagonal"),
-        event(f"{name}-flash-off", "EVENT_ACTOR_HIDE", {"actorId": "$self$"}),
+        event(f"{name}-flash-off", "EVENT_ACTOR_HIDE", {"actorId": actor_id}),
         wait_frames(f"{name}-flash-wait", 4),
-        event(f"{name}-flash-on", "EVENT_ACTOR_SHOW", {"actorId": "$self$"}),
+        event(f"{name}-flash-on", "EVENT_ACTOR_SHOW", {"actorId": actor_id}),
         wait_frames(f"{name}-flash-wait2", 4),
-        event(f"{name}-gone", "EVENT_ACTOR_HIDE", {"actorId": "$self$"}),
+        event(f"{name}-gone", "EVENT_ACTOR_HIDE", {"actorId": actor_id}),
         beep(f"{name}-whoosh", 10),
         wait_frames(f"{name}-beat", 20),
         # LEVEL 1 CLEAR is shown once, here or by the fallback exit, never both.
-        *exit_script(name, name.split("-")[0]),
+        *exit_script(name, segment),
     ]
 
 
-def exit_script(prefix: str, key: str) -> list:
-    """Clear bonus, one LEVEL 1 CLEAR box with the final score, then the title.
+def exit_script(prefix: str, segment: dict) -> list:
+    """Clear bonus, one LEVEL N CLEAR box with the score, then the next level.
 
     Each caller passes its own prefix so no event id is shared between the
     roadster and the fallback exit trigger. There is no separate clear scene.
+    Clearing a level also gives back one heart (up to 3). A segment without
+    clear_to (none now) would return to the title.
     """
+    key = segment["key"]
+    level = segment.get("level", 1)
+    target = segment.get("clear_to")
+    go = (
+        switch_scene(f"{prefix}-to-next", target, PLAYER_START[0], PLAYER_START[1])
+        if target
+        else switch_scene(f"{prefix}-to-title", "scene_title", *MENU_PLAYER)
+    )
     return [
         *add_score(f"{prefix}-bonus", key, POINTS["clear"]),
-        event(f"{prefix}-clear-text", "EVENT_TEXT", {"text": f"LEVEL 1 CLEAR\nSCORE ${SCORE_VAR}$"}),
-        switch_scene(f"{prefix}-to-title", "scene_title", *MENU_PLAYER),
+        if_value(f"{prefix}-life-up", "1", "<", 3, [event(f"{prefix}-life-inc", "EVENT_INC_VALUE", {"variable": "1"})]),
+        set_number(f"{prefix}-respawn-clear", RESPAWN_VAR, 0),
+        event(f"{prefix}-clear-text", "EVENT_TEXT", {"text": f"LEVEL {level} CLEAR\nSCORE ${SCORE_VAR}$0"}),
+        go,
     ]
 
 
@@ -2518,13 +2831,32 @@ def segment_init(segment: dict) -> list:
     # the track that is already playing restarts it. The game has one track
     # and never stops it, so a respawn reload (var 10 == 1) skips the event and
     # the song carries on.
+    # v4: the title starts the one looping track and sets MUSIC_VAR; level
+    # scenes only start it if it somehow is not playing yet, so the song runs
+    # continuously from the title through every level change and respawn.
     script = [
-        if_value(f"{key}-music-check", RESPAWN_VAR, "==", 0, [event(
+        if_value(f"{key}-music-check", MUSIC_VAR, "==", 0, [event(
             f"{key}-music",
             "EVENT_MUSIC_PLAY",
             {"musicId": MUSIC_ID, "loop": True},
-        )])
+        ), set_number(f"{key}-music-on", MUSIC_VAR, 1)])
     ]
+    # Chip rule (v4/v7): firing needs the chip collected in THIS level and not
+    # lost since. A new level (2-10) starts with chip 0, ammo 0, unpowered; a
+    # respawn after a death starts the same way; a hit while powered clears
+    # the chip with the power and ammo (lose_power). The boss arena also
+    # places a chip pickup; ammo only comes from defeated blobs.
+    if segment.get("level_start"):
+        script.append(if_value(f"{key}-level-arm-reset", RESPAWN_VAR, "==", 0, [
+            set_number(f"{key}-level-chip0", "2", 0),
+            set_number(f"{key}-level-ammo0", "0", 0),
+            set_number(f"{key}-level-power0", POWER_VAR, 0),
+        ]))
+    script.append(if_value(f"{key}-respawn-arm-reset", RESPAWN_VAR, "==", 1, [
+        set_number(f"{key}-respawn-chip0", "2", 0),
+        set_number(f"{key}-respawn-ammo0", "0", 0),
+        set_number(f"{key}-respawn-power0", POWER_VAR, 0),
+    ]))
     if segment["reset"]:
         script.append(if_value(f"{key}-new-run", RESPAWN_VAR, "==", 0, [
                 set_number(f"{key}-electrons", "0", 0),
@@ -2616,7 +2948,7 @@ def write_shapes_sheet(path: Path) -> None:
 def build_images() -> dict:
     sprites = ROOT / "assets" / "sprites"
     backgrounds = ROOT / "assets" / "backgrounds"
-    ammo_frames = electron_total() + 1
+    ammo_frames = AMMO_MAX + 1
     for shape in PLAYER_SHAPES:
         write_png_indexed(sprites / PLAYER_FILES[shape], 64, 16, paint_shape_player(shape), PLAYER_INDEXED)
     write_shapes_sheet(ROOT / "docs" / "shapes-sheet.png")
@@ -2656,7 +2988,7 @@ def build_images() -> dict:
     painted = {}
     for segment in SEGMENTS:
         image, collisions, colors = paint_segment(segment)
-        write_png(backgrounds / segment["bg_file"], SEG_W * 8, LEVEL_H * 8, image)
+        write_png(backgrounds / segment["bg_file"], seg_w(segment) * 8, LEVEL_H * 8, image)
         painted[segment["symbol"]] = {
             "tiles": unique_tiles(image),
             "collisions": collisions,
@@ -2664,6 +2996,10 @@ def build_images() -> dict:
         }
     menu_painters = [("title", paint_title), ("picker", paint_picker)]
     menu_painters += [(key, (lambda lines=lines: paint_boot(lines))) for key, lines in BOOT_SCREENS]
+    menu_painters += [("level10", paint_arena), ("win", paint_win)]
+    write_png(ROOT / "assets" / "tilesets" / "muse_tiles.png", TS_W * 8, 8, paint_muse_tileset())
+    write_png(sprites / "muse_body.png", 2 * MUSE_W, MUSE_H, paint_muse_sprite())
+    write_png(sprites / "muse_spark.png", 16, 16, paint_spark())
     for key, painter in menu_painters:
         image, menu_collisions, menu_colors = painter()
         write_png(backgrounds / f"{key}.png", CLEAR_W * 8, CLEAR_H * 8, image)
@@ -2701,14 +3037,14 @@ def write_segment(
             index=segment["index"],
             x=world_x(segment["index"]),
             y=40,
-            width=SEG_W,
+            width=seg_w(segment),
             height=LEVEL_H,
             background_symbol=segment["bg_symbol"],
-            palette_ids=bg_ids,
+            palette_ids=theme_ids(segment, bg_ids),
             sprite_palette_ids=sprite_ids,
             script=segment_init(segment),
             collisions=collisions,
-            parallax=PARALLAX,
+            parallax=segment.get("parallax", PARALLAX),
             # Turret bolts (projectile group 3) hurt like a blob's side touch.
             player_hit3=hurt_steps(f"{key}-bolt", segment) if segment.get("turret") else None,
         ),
@@ -2896,14 +3232,15 @@ def write_segment(
     gate_script = (
         [switch_scene(f"{key}-continue", segment["next"], PLAYER_START[0], PLAYER_START[1])]
         if segment["next"]
-        else exit_script("exit", key)
+        else exit_script("exit" if key == "ridge" else f"{key}-exit", segment)
     )
     gate_name = "Continue" if segment["next"] else "Exit"
-    gate_symbol = f"trigger_continue_{key}" if segment["next"] else "trigger_exit"
+    gate_symbol = f"trigger_continue_{key}" if segment["next"] else ("trigger_exit" if key == "ridge" else f"trigger_exit_{key}")
     gate_file = "continue.gbsres" if segment["next"] else "exit.gbsres"
     # With a roadster the old exit stays only as a 2-tile fallback at the
     # very end, in case Grok Bot jumps clean over the car.
-    gate_x, gate_w = (SEG_W - 2, 2) if segment.get("roadster") else (SEG_W - 4, 4)
+    width = seg_w(segment)
+    gate_x, gate_w = (width - 2, 2) if segment.get("roadster") else (width - 4, 4)
     write_json(
         trigger_dir / gate_file,
         trigger(gate_name, gate_symbol, trigger_index, gate_x, 9, gate_w, 6, gate_script),
@@ -2923,6 +3260,8 @@ def build_resources(collisions: dict) -> None:
             width=64,
             height=16,
             animation_type="platform_player",
+            # v6: 12 px wide body box (art spans x 2-13), so enemy hits need visible contact.
+            bounds=PLAYER_BOUNDS,
             animations=player_animations(),
             num_tiles=8,
         ),
@@ -2939,6 +3278,8 @@ def build_resources(collisions: dict) -> None:
             animation_type="fixed",
             animations=frames_animation("enemy", 2),
             num_tiles=4,
+            # v6: hitbox fits the drawn enemy_red_blob (was the full 16x16 tile).
+            bounds=(2, 2, 12, 14),
         ),
     )
     write_json(
@@ -2999,7 +3340,7 @@ def build_resources(collisions: dict) -> None:
                 animations=fixed_animation(name),
                 num_tiles=2,
                 # The bolt is a ~7 px ball: an 8x8 centred box, so near misses miss.
-                bounds=(4, 4, 8, 8) if name == "bolt" else None,
+                bounds=(4, 4, 8, 8) if name == "bolt" else (0, 4, 16, 12),  # v6: tower box starts at its drawn top
             ),
         )
     for name, tag in (("score_digit", "scoredigit"), ("score_tens", "scoretens")):
@@ -3029,6 +3370,8 @@ def build_resources(collisions: dict) -> None:
             animation_type="fixed",
             animations=frames_animation("flyer", 2),
             num_tiles=4,
+            # v6: hitbox fits the drawn flyer (was the full 16x16 tile).
+            bounds=(1, 3, 14, 10),
         ),
     )
     write_json(
@@ -3055,6 +3398,8 @@ def build_resources(collisions: dict) -> None:
             width=64,
             height=16,
             animation_type="platform_player",
+            # v6: 12 px wide body box (art spans x 2-13), so enemy hits need visible contact.
+            bounds=PLAYER_BOUNDS,
             animations=player_animations("square-"),
             num_tiles=8,
         ),
@@ -3071,6 +3416,8 @@ def build_resources(collisions: dict) -> None:
                 width=64,
                 height=16,
                 animation_type="platform_player",
+            # v6: 12 px wide body box (art spans x 2-13), so enemy hits need visible contact.
+            bounds=PLAYER_BOUNDS,
                 animations=player_animations(shape + "-"),
                 num_tiles=8,
             ),
@@ -3090,7 +3437,7 @@ def build_resources(collisions: dict) -> None:
                 num_tiles=2,
             ),
         )
-    for key in ["title", "picker"] + [key for key, _lines in BOOT_SCREENS]:
+    for key in ["title", "picker", "level10", "win"] + [key for key, _lines in BOOT_SCREENS]:
         write_json(
             backgrounds / f"{key}.png.gbsres",
             background_resource(
@@ -3102,7 +3449,7 @@ def build_resources(collisions: dict) -> None:
                 tile_colors=collisions[key]["colors"],
             ),
         )
-    ammo_frames = electron_total() + 1
+    ammo_frames = AMMO_MAX + 1
     write_json(
         sprites / "ammo.png.gbsres",
         sprite_resource(
@@ -3124,7 +3471,7 @@ def build_resources(collisions: dict) -> None:
                 name=segment["bg_file"].replace(".png", ""),
                 symbol=segment["bg_symbol"],
                 filename=segment["bg_file"],
-                tiles_x=SEG_W,
+                tiles_x=seg_w(segment),
                 tiles_y=LEVEL_H,
                 tile_colors=collisions[segment["symbol"]]["colors"],
             ),
@@ -3139,6 +3486,8 @@ def build_resources(collisions: dict) -> None:
         palettes / "far_hills.gbsres",
         palette("Far Hills", ["B8F0E8", "F8FCFF", "70C0D8", "287090"]),
     )
+    for theme_name, theme_colors in THEME_COLORS.items():
+        write_json(palettes / f"{theme_name.lower().replace(' ', '_')}.gbsres", palette(theme_name, theme_colors))
     # Boot cards: near-black navy backdrop, teal accent, off-white text.
     write_json(palettes / "boot_dark.gbsres", palette("Boot Dark", ["101828", "60D8C8", "586078", "F0F0F0"]))
     write_json(
@@ -3200,8 +3549,40 @@ def build_resources(collisions: dict) -> None:
         "default-sprite",
     ]
 
+    write_json(ROOT / "assets" / "tilesets" / "muse_tiles.png.gbsres", {
+        "_resourceType": "tileset",
+        "id": uid(TILESET_ID),
+        "name": "muse_tiles",
+        "symbol": TILESET_ID,
+        "filename": "muse_tiles.png",
+        "width": TS_W,
+        "height": 1,
+        "imageWidth": TS_W * 8,
+        "imageHeight": 8,
+    })
+    cheek_frame = {"id": uid("cheek-f0"), "tiles": [tile_ref("cheek-f0-l", 0, 0, 6)]}
+    spark_frame = {"id": uid("spark-f0"), "tiles": [tile_ref("spark-f0-l", 0, 0, 2)]}
+    write_json(sprites / "muse_spark.png.gbsres", sprite_resource(
+        name="muse_spark", symbol="sprite_muse_spark", filename="muse_spark.png",
+        image_path=sprites / "muse_spark.png", width=16, height=16, animation_type="fixed",
+        animations=[{"id": uid("spark-anim0"), "frames": [spark_frame]}]
+        + [empty_frame(f"spark-anim{i}") for i in range(1, 8)],
+        num_tiles=2, bounds=(1, 5, 6, 6)))
+    write_json(sprites / "muse_body.png.gbsres", sprite_resource(
+        name="muse_body", symbol="sprite_muse_body", filename="muse_body.png",
+        image_path=sprites / "muse_body.png", width=2 * MUSE_W, height=MUSE_H, animation_type="fixed",
+        animations=muse_sprite_animations(), num_tiles=2 * len(MUSE_TILES),
+        canvas_width=MUSE_W, canvas_height=MUSE_H, bounds=MUSE_BOUNDS))
+    for name, colors in (
+        ("Muse Arena", [MUSE_SKY, "68D070", "289038", "183028"]),
+        ("Muse Body", [MUSE_SKY, "FFF4E0", "E0C090", "584030"]),
+        ("Muse HP", [MUSE_SKY, "F8A0C0", "D04878", "302030"]),
+        ("Muse Pink", sprite_palette("FFF4E0", "F8A0C0", "584030")),
+    ):
+        write_json(palettes / f"{name.lower().replace(' ', '_')}.gbsres", palette(name, colors))
     for segment in SEGMENTS:
         write_segment(segment, collisions[segment["symbol"]]["collisions"], bg_ids, sprite_ids)
+    write_boss(collisions, bg_ids, sprite_ids)
     write_menus(collisions, bg_ids, sprite_ids)
     write_boot_scenes(collisions, sprite_ids)
 
@@ -3273,6 +3654,14 @@ GLYPHS = {
     "=": ("00000", "00000", "11111", "00000", "11111", "00000", "00000"),
     "<": ("00010", "00110", "01110", "11110", "01110", "00110", "00010"),
     ">": ("01000", "01100", "01110", "01111", "01110", "01100", "01000"),
+    "J": ("00111", "00010", "00010", "00010", "00010", "10010", "01100"),
+    "M": ("10001", "11011", "10101", "10101", "10001", "10001", "10001"),
+    "Q": ("01110", "10001", "10001", "10001", "10101", "10010", "01101"),
+    "V": ("10001", "10001", "10001", "10001", "10001", "01010", "00100"),
+    "X": ("10001", "10001", "01010", "00100", "01010", "10001", "10001"),
+    "Y": ("10001", "10001", "01010", "00100", "00100", "00100", "00100"),
+    "Z": ("11111", "00001", "00010", "00100", "01000", "10000", "11111"),
+    "!": ("00100", "00100", "00100", "00100", "00100", "00000", "00100"),
     " ": ("00000",) * 7,
 }
 DOT_TILE = (
@@ -3489,8 +3878,34 @@ def title_script() -> list:
             ["start", "a"],
             [switch_scene("title-to-picker", "scene_picker", *MENU_PLAYER)],
         ),
+        # DEBUG WARP (cheat): each Select on the title adds 1 to WARP_VAR
+        # (wraps 9 -> 0) with a rising beep; Start then the picker's A start
+        # at Level WARP_VAR + 1 with a fresh run. 0 (default) is Level 1.
+        input_script("title-warp", ["select"], [
+            event("title-warp-inc", "EVENT_INC_VALUE", {"variable": WARP_VAR}),
+            if_value("title-warp-wrap", WARP_VAR, ">", 9, [set_number("title-warp-to-0", WARP_VAR, 0)]),
+            beep("title-warp-beep", 8),
+        ]),
         event("title-music", "EVENT_MUSIC_PLAY", {"musicId": MUSIC_ID, "loop": True}),
+        set_number("title-music-on", MUSIC_VAR, 1),
     ]
+
+
+WARP_VAR = "24"
+MUSIC_VAR = "32"
+
+
+def warp_events() -> list:
+    """Picker start: Level 1 normally, or the debug-warp level (see title)."""
+    start_x, start_y = PLAYER_START
+    chain = [switch_scene("pick-go", "scene_level1_green_hills", start_x, start_y)]
+    for level in range(10, 1, -1):
+        chain = [if_value(f"pick-warp-{level}", WARP_VAR, "==", level - 1, [
+            *reset_run(f"pick-warp-{level}-reset"),
+            set_number(f"pick-warp-{level}-clear", WARP_VAR, 0),
+            switch_scene(f"pick-warp-{level}-go", level_symbol(level), start_x, start_y),
+        ], chain)]
+    return chain
 
 
 def picker_script() -> list:
@@ -3532,7 +3947,7 @@ def picker_script() -> list:
         beep("pick-down-sound", 7),
         *preview("down"),
     ]
-    go = [switch_scene("pick-go", "scene_level1_green_hills", start_x, start_y)]
+    go = warp_events()
     return [
         hide_player("pick-hide-player"),
         input_script("pick-go-input", ["a", "start"], go),
@@ -3935,7 +4350,7 @@ GB Studio reads every `.png` in this folder. The Level 1 sheets below are 16x16,
 | player_blob.png | Same style, irregular blob (shape 7). |
 | enemy_red_blob.png | Grok Blob. Two frames, cream eyes, black pupils, belly, brows, and feet. |
 | electron.png | Electron pickup and the projectile Grok Bot fires. |
-| silicon_chip.png | One power-up. Collecting it unlocks firing for the rest of the run. |
+| silicon_chip.png | One power-up. Collecting it unlocks firing until the next hit, death or level change (boss arena: ammo only). |
 | lives.png | Four frames. Each frame is a black badge with a heart and a digit, 0 through 3. The pinned actor shows the frame that matches `lives`. |
 | ammo.png | One frame per electron count, from 0 up. Each frame is a blue badge with two digits. The pinned actor shows the frame that matches `electrons`. |
 | flyer.png | Zap Bat, a small winged bot. Two frames, wings up and down. |
@@ -3993,7 +4408,7 @@ def scanline_peak(segment: dict) -> int:
     """
     worst = 0
     hud = [(LIVES_AT[0], LIVES_AT[1]), (AMMO_AT[0], AMMO_AT[1])]
-    for left in range(0, SEG_W - 19):
+    for left in range(0, seg_w(segment) - 19):
         rows = [0] * (LEVEL_H + 2)
         # A 16 px actor at tile y covers tile rows y-1 and y (see HUD_ROW);
         # the 2 px nudge spills into row y+1.
@@ -4047,9 +4462,9 @@ def validate_layout() -> None:
         peak = scanline_peak(segment)
         if peak > 10:
             raise SystemExit(f"{label} can put {peak} sprites on one scanline")
-        for x in range(SEG_W):
+        for x in range(seg_w(segment)):
             top = solid_top(segment, x)
-            if top is not None and top < PLAY_ROW:
+            if top is not None and top < segment.get("play_row", PLAY_ROW):
                 raise SystemExit(f"{label} solid at column {x} is inside the scenery band")
         for x0, x1 in segment["pits"]:
             for x in range(x0, x1 + 1):
@@ -4076,7 +4491,7 @@ def validate_layout() -> None:
                 raise SystemExit(f"{label} blob at {(x, y)} patrols off its ledge")
         for kind in ("electrons",):
             for x, y in segment[kind]:
-                ground = solid_top(segment, x)
+                ground = stand_top(segment, x)
                 if ground is None:
                     raise SystemExit(f"{label} {kind} at {(x, y)} is over a pit")
                 rise = required_rise(ground - 2, y)
@@ -4099,7 +4514,7 @@ def validate_layout() -> None:
             raise SystemExit(f"{label} needs at least two blobs before the chip")
         if solid_top(segment, PLAYER_START[0]) != PLAYER_START[1] + 2:
             raise SystemExit(f"{label} start is not on the floor")
-        gate_x = SEG_W - 4
+        gate_x = seg_w(segment) - 4
         if solid_top(segment, gate_x) != FLOOR_TOP:
             raise SystemExit(f"{label} gate is not on the floor")
         for index, (_kind, x, y) in enumerate(bodies):
@@ -4119,15 +4534,18 @@ def layout_rows(segment: dict) -> list[str]:
         marks[(x, y)] = LAYOUT_MARKS[kind]
     for dx in range(4):
         for dy in range(6):
-            marks.setdefault((SEG_W - 4 + dx, 9 + dy), "E")
+            marks.setdefault((seg_w(segment) - 4 + dx, 9 + dy), "E")
     for x0, x1 in segment["pits"]:
         for x in range(x0, x1 + 1):
             for y in range(FLOOR_TOP, FLOOR_TOP + 3):
                 marks.setdefault((x, y), "V")
+    for x0, x1, row in segment.get("floats", []):
+        for x in range(x0, x1 + 1):
+            marks.setdefault((x, row), "-")
     rows = []
     for y in range(LEVEL_H):
         chars = []
-        for x in range(SEG_W):
+        for x in range(seg_w(segment)):
             top = solid_top(segment, x)
             marker = marks.get((x, y))
             if marker is not None and (top is None or y < top):
@@ -4142,6 +4560,813 @@ def layout_rows(segment: dict) -> list[str]:
     return rows
 
 
+# ---------------------------------------------------------------------------
+# Level 10: the boss arena.
+#
+# BOSS_NAME is the one place the boss is named (HP bar label, win screen,
+# defeat text). Letters must exist in GLYPHS.
+BOSS_NAME = "MUSE"
+#
+# BIG-BOSS TECHNIQUE (BG tiles + Replace Tile XY). The boss is 80x80 px
+# (10x10 tiles, 5x Grok Bot's 16 px height), far beyond what sprites allow
+# (10 per scanline, 40 total). It is drawn into the background instead:
+#   * The arena is one fixed 20x18 screen. Rows 5-14, columns 2-17 are the
+#     "boss band" (16x10 cells). Every band cell has its own unique tile in
+#     the scene image (a small bit pattern), so each cell owns one VRAM tile.
+#   * assets/tilesets/muse_tiles.png holds the boss art: tile 0 is sky, then
+#     for each facing (right, left) 10 rows of 11 tiles (sky + 10 boss columns).
+#   * GBVM's Replace Tile XY (EVENT_REPLACE_TILE_XY) rewrites the tile DATA
+#     behind a map cell. To draw the boss at column BX, every band cell
+#     (col, row) gets tile  in_range * (dir*110 + row*11 + (col-BX) + 1),
+#     in_range = 0 <= col-BX <= 9. Moving one tile redraws only columns
+#     BX-1..BX+10 (120 tiles). The cells keep palette slot 2 (Muse Body).
+#   * Collision is an invisible 16x16 actor whose sprite bounds are 76x76 px,
+#     moved to the boss position after each step. Its contact script handles
+#     stomps (player above the boss) and side hits; its hit-1 script takes
+#     electron shots. Pink cheeks are two one-tile sprites (Muse Pink).
+#   * The boss moves in whole 8 px steps (BG tiles can't move by pixels).
+BOSS_SCENE = "scene_level10"
+WIN_SCENE = "scene_win"
+BOSS_KEY = "boss"
+BAND_X0, BAND_X1 = 2, 17
+BAND_Y0 = 5
+BOSS_W = BOSS_H = 10
+BOSS_MIN_X, BOSS_MAX_X = BAND_X0, BAND_X1 - BOSS_W + 1  # 2..8
+BOSS_ENTRY_X = BAND_X1 + 3  # 20: hidden; hops in via 17, 14, 11 to 8
+BOSS_HP = 8
+PIP_X0, PIP_Y = 11, 2
+TS_W = 3  # tileset: sky, full pip, empty pip
+PIP_FULL, PIP_EMPTY = 1, 2
+TILESET_ID = "tileset_muse"
+# Variables 11-23 (24 is the debug warp).
+B_X, B_DIR, B_HP, B_BURST, B_COL, B_INV, B_RELEASE, B_TMP, B_STATE, B_SHOW = (
+    "11", "12", "13", "14", "15", "16", "17", "18", "19", "20")
+B_BLOB = ("21", "22")
+B_TMP2 = "23"
+BURST_EVERY = 1  # hops between electron bursts (one per landing)
+RELEASE_EVERY = 2  # hops between blob releases
+BOSS_STEP = 3  # tiles per hop (24 px): three spots, x = 2, 5, 8
+ROWS_PER_FRAME = 5  # replace-tile writes per frame (half a column)
+P_Y, H_Y = "27", "28"  # stomp test: player and hitbox y (px)
+B_IMM = "29"  # stomp immunity, in 16-frame ticks (counted down by VM timer 2)
+B_SHOT_CD = "30"  # 20-frame boss grace after an electron hit (shots only)
+IMM_TICKS = 7  # ~112 frames of stomp immunity
+P_X = "31"  # player x (px) for the stomp knock-off
+BURST_LIFE = 1.2
+ARENA_LEDGES = [(0, 1, 11), (18, 19, 11), (0, 1, 7), (18, 19, 7), (3, 7, 4), (12, 16, 4)]
+MUSE_SKY = "A0B8F0"
+
+
+INDEX_RGBA = [SKY, GRASS_L, DIRT, OUTLINE]  # green channel -> BG colour 0..3
+
+
+def pip_tile(full: bool) -> list[list[int]]:
+    spec = (
+        "00000000",
+        "03303300",
+        "31131130",
+        "31111130",
+        "32111230",
+        "03212300",
+        "00323000",
+        "00030000",
+    ) if full else (
+        "00000000",
+        "03303300",
+        "30030030",
+        "30000030",
+        "30000030",
+        "03000300",
+        "00303000",
+        "00030000",
+    )
+    return [[int(c) for c in row] for row in spec]
+
+
+def paint_muse_tileset() -> list[list[tuple[int, int, int, int]]]:
+    """Replace-tile source for the HP hearts: tile 0 sky, 1 full, 2 empty."""
+    image = blank(TS_W * 8, 8, SKY)
+    for k, full in enumerate((True, False)):
+        tile = pip_tile(full)
+        for y in range(8):
+            for x in range(8):
+                image[y][(k + 1) * 8 + x] = INDEX_RGBA[tile[y][x]]
+    return image
+
+
+MUSE_ART = (
+    # 24x32, facing right. . clear, c cream, p pink cheek, d dark.
+    "........d...d...........",
+    ".......dcd.dcd..d.......",
+    "....d..dccdcccddcd......",
+    "...dcddccccccccccd..d...",
+    "....dccccccccccccdddcd..",
+    "..ddccccccccccccccccd...",
+    ".dccccccccccccccccccd...",
+    "..dcccccccccccccccccdd..",
+    ".dccccccccccccccccccccd.",
+    "dccccccccccccccccccccd..",
+    ".dccccccccccccccccccccd.",
+    "dccccccccccccdccccdcccd.",
+    ".dcccccccccccdccccdccccd",
+    "dccccccccccccdccccdcccd.",
+    ".dccccccccccccccccccccd.",
+    "dcccccccccccppcccccppccd",
+    ".dccccccccccppccccdppcd.",
+    "dcccccccccccccdccdccccd.",
+    ".dcccccccccccccddccccccd",
+    "dccccccccccccccccccccd..",
+    ".dccccccccccccccccccccd.",
+    "dccccccccccccccccccccd..",
+    ".dcccccccccccccccccccd..",
+    "dccccccccccccccccccccd..",
+    ".dccccccccccccccccccd...",
+    "..dccccccccccccccccccd..",
+    ".dcccccccccccccccccd....",
+    "..ddccccccccccccccdd....",
+    "....ddcccddddccccd......",
+    "...dcccccd..dcccccd.....",
+    "...dddddd...ddddddd.....",
+    "........................",
+)
+
+
+def paint_muse_sprite() -> list[list[tuple[int, int, int, int]]]:
+    """48x32 sheet: two 24x32 frames of MUSE (cheeks on, cheeks off).
+
+    Original art drawn at size: a round fuzzy cream creature with tufts,
+    dot eyes and a smile toward the right (flipLeft mirrors it) and pink
+    cheeks. One palette (Muse Pink: cream, pink, dark) for all tiles."""
+    assert len(MUSE_ART) == MUSE_H and all(len(r) == MUSE_W for r in MUSE_ART)
+    colour = {"c": WHITE, "p": GRAY, "d": BLACK}
+    image = blank(2 * MUSE_W, MUSE_H, CLEAR)
+    for f in range(2):
+        for y, row in enumerate(MUSE_ART):
+            for x, ch in enumerate(row):
+                if ch == ".":
+                    continue
+                if ch == "p" and f == 1:
+                    ch = "c"
+                image[y][f * MUSE_W + x] = colour[ch]
+    MUSE_TILES.clear()
+    for r in range(MUSE_H // 16):
+        for c in range(MUSE_W // 8):
+            if any(MUSE_ART[y][x] != "." for y in range(r * 16, r * 16 + 16) for x in range(c * 8, c * 8 + 8)):
+                MUSE_TILES.append((c, r, MUSE_PINK_SLOT))
+    return image
+
+
+def muse_sprite_animations() -> list[dict]:
+    def tiles(f):
+        return [{
+            "id": uid(f"muse-f{f}-t{c}-{r}"), "x": c * 8 - (MUSE_W // 2 - 8), "y": (MUSE_H // 16 - 1 - r) * 16,
+            "sliceX": f * MUSE_W + c * 8, "sliceY": r * 16, "flipX": False, "flipY": False,
+            "palette": 0, "paletteIndex": slot, "objPalette": "OBP0", "priority": False,
+        } for c, r, slot in MUSE_TILES]
+    frames = [{"id": uid(f"muse-f{f}"), "tiles": tiles(f)} for f in range(2)]
+    return [{"id": uid("muse-anim0"), "frames": frames}] + [empty_frame(f"muse-anim{i}") for i in range(1, 8)]
+
+
+def paint_spark() -> list[list[tuple[int, int, int, int]]]:
+    """16x16 canvas, one 8x16 column used: a 6 px electron orb at x 1..6,
+    y 5..10, so a boss spark costs one hardware sprite, not two."""
+    image = blank(16, 16, CLEAR)
+    spec = ("033330", "322223", "321123", "321123", "322223", "033330")
+    colour = {"1": E_WHITE, "2": CYAN, "3": BLUE}
+    for y, row in enumerate(spec):
+        for x, c in enumerate(row):
+            if c != "0":
+                image[5 + y][1 + x] = colour[c]
+    return image
+
+
+def arena_solid(x: int) -> int:
+    return FLOOR_TOP
+
+
+def paint_arena():
+    """Background of the boss arena and its collision and palette maps."""
+    w, h = CLEAR_W, CLEAR_H
+    ground = {1: grass_tile(), 2: dirt_tile()}
+    image = blank(w * 8, h * 8, SKY)
+    collisions = [0] * (w * h)
+    colors = [0] * (w * h)
+
+    def put_tile(tx, ty, pattern):
+        for y in range(8):
+            for x in range(8):
+                image[ty * 8 + y][tx * 8 + x] = pattern[y][x]
+
+    for ty in range(h):
+        for tx in range(w):
+            if ty == FLOOR_TOP:
+                put_tile(tx, ty, ground[1])
+                collisions[ty * w + tx] = 15
+            elif ty > FLOOR_TOP:
+                put_tile(tx, ty, ground[2])
+                collisions[ty * w + tx] = 15
+    for x0, x1, row in ARENA_LEDGES:
+        for tx in range(x0, x1 + 1):
+            put_tile(tx, row, float_tile())
+            collisions[row * w + tx] = 1
+    # v4: no boss band; MUSE is a sprite actor.
+    # Name label (palette 0, dark) right-aligned before the pips.
+    name_x = (PIP_X0 - 1 - len(BOSS_NAME)) * 8
+    draw_text(image, name_x, PIP_Y * 8, BOSS_NAME, OUTLINE)
+    # HP pips: unique placeholders (one marker pixel each), redrawn at init.
+    for k in range(BOSS_HP):
+        tile = [[INDEX_RGBA[v] for v in row] for row in pip_tile(True)]
+        tile[0][k] = OUTLINE
+        tile[7][0] = OUTLINE  # flip-proof marker (see the band)
+        put_tile(PIP_X0 + k, PIP_Y, tile)
+        colors[PIP_Y * w + PIP_X0 + k] = 3
+    return image, collisions, colors
+
+
+def paint_win():
+    image, collisions, colors = paint_menu_base()
+    draw_text(image, 16, 24, "YOU WIN!", OUTLINE, 2)
+    line = f"{BOSS_NAME} DEFEATED"
+    draw_text(image, (CLEAR_W * 8 - len(line) * 8) // 2, 64, line, OUTLINE)
+    return image, collisions, colors
+
+
+def tile_value(expr: str) -> dict:
+    return {"type": "expression", "value": expr}
+
+
+def replace_tile(name: str, x, y, tile) -> dict:
+    def val(v):
+        return v if isinstance(v, dict) else {"type": "number", "value": v}
+    return event(name, "EVENT_REPLACE_TILE_XY", {
+        "x": val(x), "y": val(y), "tilesetId": uid(TILESET_ID), "tileIndex": val(tile), "tileSize": "8px",
+    })
+
+
+def set_expr(name: str, variable: str, expr: str) -> dict:
+    return event(name, "EVENT_SET_VALUE", {"variable": variable, "value": tile_value(expr)})
+
+
+def loop_while(name: str, expr: str, body: list) -> dict:
+    return event(name, "EVENT_LOOP_WHILE", {"condition": tile_value(expr)}, {"true": body})
+
+
+def if_expr(name: str, expr: str, true: list, false: list | None = None) -> dict:
+    return event(name, "EVENT_IF", {"condition": tile_value(expr), "__collapseElse": not false},
+                 {"true": true, "false": false or []})
+
+
+def v(var: str) -> str:
+    return f"${var}$"
+
+
+def draw_pips(name: str) -> list:
+    return [
+        replace_tile(f"{name}-pip{k}", PIP_X0 + k, PIP_Y,
+                     tile_value(f"({v(B_HP)} > {k}) * {PIP_FULL} + ({v(B_HP)} <= {k}) * {PIP_EMPTY}"))
+        for k in range(BOSS_HP)
+    ]
+
+
+HITBOX = "actor_boss-hitbox"  # v4: the MUSE sprite actor itself (body + hitbox)
+BOSS_BLOBS = ("actor_boss-blob1", "actor_boss-blob2")
+BOSS_DROPS = ("actor_boss-drop1", "actor_boss-drop2")
+BOSS_ROADSTER = "actor_boss-roadster"
+BOSS_CHIP = "actor_boss-chip"
+# Park inactive pool actors off the 20-tile arena so they cannot flash on
+# screen for a frame before boss_init deactivates them (appear-then-gone).
+BOSS_PARK = (22, 0)
+# v5 sprite MUSE: one 24x32 metasprite actor (6 hardware sprites) moved by
+# the engine's own Move To at a fixed speed, so every tile moves together
+# in actors_update on the same frame and the script never touches x mid-walk.
+MUSE_W, MUSE_H = 24, 32
+MUSE_Y = FLOOR_TOP * 8 - 16           # actor y (px): 16 px base on the floor
+MUSE_BOUNDS = (-2, -12, 20, 27)       # x, y (down), w, h from the base top-left
+MUSE_LEFT, MUSE_RIGHT = 20, 124       # patrol ends (actor x, px); body spans x-4 .. x+20
+MUSE_ENTRY = 152                      # walks in from the right edge
+MUSE_TILES: list = []                 # (col, row, palette slot) filled by paint_muse_sprite
+MUSE_PINK_SLOT = 6
+
+
+def set_muse_frame(name: str, frame: int) -> dict:
+    return event(name, "EVENT_ACTOR_SET_FRAME", {"actorId": uid(HITBOX), "frame": {"type": "number", "value": frame}})
+
+
+def place_boss(name: str) -> list:
+    """Put the MUSE actor at (B_X, MUSE_Y) px."""
+    return [event(f"{name}-muse", "EVENT_ACTOR_SET_POSITION", {
+        "actorId": uid(HITBOX), "x": {"type": "variable", "value": B_X},
+        "y": {"type": "number", "value": MUSE_Y}, "units": "pixels"})]
+
+
+def boss_segment() -> dict:
+    # Chip on the mid-right ledge (tiles 18-19, row 7 → stand y=5), reachable
+    # by jump and clear of the HUD/pip band; roadster waits off-screen until
+    # MUSE is defeated, then the Level-1 ending cutscene runs.
+    return {
+        "key": BOSS_KEY, "level": 10, "name": f"Level 10 {BOSS_NAME}", "symbol": BOSS_SCENE,
+        "folder": "level_10_boss",
+        "reset": False, "level_start": True, "pits": [], "blobs": [],
+        "chips": [(18, 5)], "electrons": [], "roadster": [],
+        "clear_to": WIN_SCENE,
+    }
+
+
+SPARK_X = {"left": -4, "right": 12}
+SPARK_Y = (-24, -32, -40)  # above MUSE's head (top at y-16), staggered, below the HUD band
+
+
+def launch_spark(name: str, angle: int, x: int, y: int) -> dict:
+    return event(name, "EVENT_LAUNCH_PROJECTILE", {
+        "spriteSheetId": uid("sprite_muse_spark"), "spriteStateId": uid("sprite_muse_spark-state"),
+        "actorId": uid(HITBOX), "x": x, "y": y,
+        "directionType": "angle", "angle": angle, "otherActorId": "$self$", "direction": "left",
+        "speed": 2, "animSpeed": 15, "lifeTime": BURST_LIFE, "initialOffset": 0,
+        # destroyOnHit False: during the 60-frame hurt blink a True flag ate
+        # every spark on contact with no damage, which felt like "electrons
+        # don't hurt". Sparks keep their short lifeTime and still collide.
+        "loopAnim": True, "destroyOnHit": False, "collisionGroup": "3", "collisionMask": ["player"],
+    })
+
+
+def boss_burst(name: str) -> list:
+    """Three one-tile sparks toward the player's side, launched 5 frames
+    apart on rows 8 px apart so at most two share a scanline."""
+    def fan(side, angles):
+        out = []
+        for i, (a, y) in enumerate(zip(angles, SPARK_Y)):
+            if i:
+                out.append(wait_frames(f"{name}-{side}-w{i}", 5))
+            out.append(launch_spark(f"{name}-{side}{i}", a, SPARK_X[side], y))
+        return out
+    left, right = fan("left", (176, 192, 208)), fan("right", (80, 64, 48))
+    return [
+        beep(f"{name}-sound", 9),
+        event(f"{name}-side", "EVENT_IF_ACTOR_RELATIVE_TO_ACTOR", {
+            "actorId": "player", "operation": "left", "otherActorId": uid(HITBOX), "__collapseElse": False,
+        }, {"true": left, "false": right}),
+    ]
+
+
+def boss_release(name: str) -> list:
+    """Let out one Grok Blob just outside MUSE's body on Grok Bot's side."""
+    def release(k: int) -> list:
+        sym = uid(BOSS_BLOBS[k])
+        def put(tag, expr):
+            return event(f"{name}-b{k}-pos-{tag}", "EVENT_ACTOR_SET_POSITION", {
+                "actorId": sym, "x": tile_value(expr), "y": {"type": "number", "value": FLOOR_TOP - 2},
+                "units": "tiles"})
+        return [
+            set_number(f"{name}-b{k}-busy", B_BLOB[k], 1),
+            event(f"{name}-b{k}-side", "EVENT_IF_ACTOR_RELATIVE_TO_ACTOR", {
+                "actorId": "player", "operation": "left", "otherActorId": uid(HITBOX), "__collapseElse": False,
+            }, {"true": [put("l", f"max(({v(B_X)} - 4) / 8 - 2, 0)")],
+                "false": [put("r", f"min(({v(B_X)} + 27) / 8, {CLEAR_W - 2})")]}),
+            event(f"{name}-b{k}-on", "EVENT_ACTOR_ACTIVATE", {"actorId": sym}),
+            event(f"{name}-b{k}-show", "EVENT_ACTOR_SHOW", {"actorId": sym}),
+            event(f"{name}-b{k}-col", "EVENT_ACTOR_COLLISIONS_ENABLE", {"actorId": sym}),
+            beep(f"{name}-b{k}-sound", 5),
+        ]
+    return [if_value(f"{name}-b0-free", B_BLOB[0], "==", 0, release(0),
+                     [if_value(f"{name}-b1-free", B_BLOB[1], "==", 0, release(1))])]
+
+
+def boss_defeat(name: str, seg: dict) -> list:
+    """Hit handler side of the defeat: freeze the fight at once; the flash
+    and the roadster ending run in the boss thread (boss_finale)."""
+    steps = [
+        set_number(f"{name}-state", B_STATE, 2),
+        set_number(f"{name}-done", LEVEL_DONE, 1),
+        no_fire(f"{name}-nofire"),
+    ]
+    for k in range(len(BOSS_BLOBS)):
+        steps.append(event(f"{name}-blob{k}-off", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(BOSS_BLOBS[k])}))
+    for k in range(len(BOSS_DROPS)):
+        steps.append(event(f"{name}-drop{k}-off", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(BOSS_DROPS[k])}))
+    steps += [
+        event(f"{name}-chip-off", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(BOSS_CHIP)}),
+        event(f"{name}-stop", "EVENT_ACTOR_MOVE_CANCEL", {"actorId": uid(HITBOX)}),
+        set_muse_frame(f"{name}-cheeks-off", 1),
+        beep(f"{name}-boom", 1),
+    ]
+    return steps
+
+
+def boss_clear_pool(name: str) -> list:
+    """Hide every pooled enemy/pickup so the roadster ending stays clean."""
+    steps = [
+        event(f"{name}-muse-nocol", "EVENT_ACTOR_COLLISIONS_DISABLE", {"actorId": uid(HITBOX)}),
+        event(f"{name}-muse-hide", "EVENT_ACTOR_HIDE", {"actorId": uid(HITBOX)}),
+        event(f"{name}-muse-off", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(HITBOX)}),
+        event(f"{name}-chip-off", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(BOSS_CHIP)}),
+        event(f"{name}-player-nocol", "EVENT_ACTOR_COLLISIONS_DISABLE", {"actorId": "player"}),
+    ]
+    for k, sym in enumerate(BOSS_BLOBS):
+        steps += [
+            event(f"{name}-blob{k}-nocol", "EVENT_ACTOR_COLLISIONS_DISABLE", {"actorId": uid(sym)}),
+            event(f"{name}-blob{k}-hide", "EVENT_ACTOR_HIDE", {"actorId": uid(sym)}),
+            event(f"{name}-blob{k}-off", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(sym)}),
+        ]
+    for k, sym in enumerate(BOSS_DROPS):
+        steps += [
+            event(f"{name}-drop{k}-hide", "EVENT_ACTOR_HIDE", {"actorId": uid(sym)}),
+            event(f"{name}-drop{k}-off", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(sym)}),
+        ]
+    return steps
+
+
+def boss_finale(seg: dict) -> list:
+    """MUSE flash, then the same roadster kickflip ending as Level 1."""
+    name = "boss-finale"
+    hide = lambda t: event(f"{name}-{t}", "EVENT_ACTOR_HIDE", {"actorId": uid(HITBOX)})
+    show = lambda t: event(f"{name}-{t}", "EVENT_ACTOR_SHOW", {"actorId": uid(HITBOX)})
+    car = uid(BOSS_ROADSTER)
+    return [
+        event(f"{name}-nocol", "EVENT_ACTOR_COLLISIONS_DISABLE", {"actorId": uid(HITBOX)}),
+        set_muse_frame(f"{name}-cheeks-off", 1),
+        shake(f"{name}-shake", 0.5, 5),
+        *[e for i in range(3) for e in (hide(f"off{i}"), wait_frames(f"{name}-w{i}a", 8),
+                                        show(f"on{i}"), wait_frames(f"{name}-w{i}b", 8))],
+        hide("gone"),
+        *boss_clear_pool(name),
+        beep(f"{name}-win", 10),
+        event(f"{name}-text", "EVENT_TEXT", {"text": f"{BOSS_NAME} DEFEATED!"}),
+        # Bring the roadster onto the floor in front of Grok Bot and run the
+        # Level-1 ending (invulnerable, hazards gone, kickflip, fly off).
+        event(f"{name}-car-pos", "EVENT_ACTOR_SET_POSITION", {
+            "actorId": car, "x": {"type": "number", "value": 8},
+            "y": {"type": "number", "value": FLOOR_TOP - 2}, "units": "tiles"}),
+        event(f"{name}-car-on", "EVENT_ACTOR_ACTIVATE", {"actorId": car}),
+        event(f"{name}-car-show", "EVENT_ACTOR_SHOW", {"actorId": car}),
+        event(f"{name}-car-frame", "EVENT_ACTOR_SET_FRAME", {
+            "actorId": car, "frame": {"type": "number", "value": 0}}),
+        wait_frames(f"{name}-car-beat", 20),
+        *roadster_script(f"{name}-roadster", seg, actor_id=car),
+    ]
+
+
+def knock_off(name: str) -> list:
+    """Bounce Grok Bot up and ease his x to just clear of MUSE's body on the
+    nearer side over 6 frames (airborne, so the engine keeps the position)."""
+    centre = f"{v(B_X)} + 8"
+    target = (f"({v(P_X)} < {centre}) * max({v(B_X)} - 4 - 18, 0) + "
+              f"({v(P_X)} >= {centre}) * min({v(B_X)} + 20 + 2, {CLEAR_W * 8 - 16})")
+    steps = [event(f"{name}-bounce", "EVENT_PLAYER_BOUNCE", {"height": "high"}),
+             set_expr(f"{name}-target", "25", target)]
+    for i in range(6):
+        steps += [
+            event(f"{name}-px{i}", "EVENT_ACTOR_GET_POSITION", {"actorId": "player", "vectorX": P_X, "vectorY": "26", "units": "pixels"}),
+            event(f"{name}-mv{i}", "EVENT_ACTOR_SET_POSITION", {
+                "actorId": "player", "x": tile_value(f"{v(P_X)} + ({v('25')} - {v(P_X)}) / {6 - i}"),
+                "y": {"type": "variable", "value": "26"}, "units": "pixels"}),
+            wait_frames(f"{name}-w{i}", 1),
+        ]
+    return steps
+
+
+def player_safe(name: str, body: list) -> list:
+    """Hold the player-safe flag ($16) and the hurt lock (2) for 20 frames
+    around ``body`` (a stomp or a safe bounce), then release both."""
+    return ([set_number(f"{name}-inv", B_INV, 1), set_number(f"{name}-lock", HURT_LOCK, 2)] + body
+            + [wait_frames(f"{name}-grace", 14),
+               if_value(f"{name}-unlock-check", HURT_LOCK, "==", 2, [set_number(f"{name}-unlock", HURT_LOCK, 0)]),
+               set_number(f"{name}-inv-off", B_INV, 0)])
+
+
+def boss_hit(name: str, seg: dict) -> list:
+    """HP-1, pip, sound, score; the defeat when HP reaches 0."""
+    return [
+        event(f"{name}-hp", "EVENT_DEC_VALUE", {"variable": B_HP}),
+        replace_tile(f"{name}-pip", tile_value(f"{PIP_X0} + {v(B_HP)}"), PIP_Y, PIP_EMPTY),
+        beep(f"{name}-sound", 3),
+        *add_score(f"{name}-pts", BOSS_KEY, 100),
+        if_value(f"{name}-dead", B_HP, "<=", 0, boss_defeat(f"{name}-defeat", seg)),
+    ]
+
+
+def boss_damage(name: str, seg: dict, stomp: bool) -> list:
+    if not stomp:
+        return [set_number(f"{name}-cd", B_SHOT_CD, 1), *boss_hit(name, seg),
+                wait_frames(f"{name}-cd-wait", 20), set_number(f"{name}-cd-off", B_SHOT_CD, 0)]
+    return player_safe(name, [set_number(f"{name}-imm", B_IMM, IMM_TICKS), *boss_hit(name, seg), *knock_off(name)])
+
+
+STOMP_DY = MUSE_BOUNDS[1] + 4  # player base top at most 4 px under the hitbox top
+
+
+def rearm_actor_collision(name: str, actor_id: str = "$self$") -> list:
+    """GB Studio On Hit fires on enter only. After a blocked or finished hurt
+    window Grok Bot may still overlap; pulse collisions so the next check
+    re-fires once the hurt lock and post-stomp invuln are clear."""
+    return [
+        loop_while(f"{name}-wait", f"{v(HURT_LOCK)} != 0 || {v(B_INV)} != 0", [
+            wait_frames(f"{name}-tick", 1),
+        ]),
+        if_value(f"{name}-still-live", B_STATE, "!=", 2, [
+            event(f"{name}-off", "EVENT_ACTOR_COLLISIONS_DISABLE", {"actorId": actor_id}),
+            wait_frames(f"{name}-gap", 1),
+            event(f"{name}-on", "EVENT_ACTOR_COLLISIONS_ENABLE", {"actorId": actor_id}),
+        ]),
+    ]
+
+
+def boss_contact(seg: dict) -> list:
+    """MUSE touched by Grok Bot. A landing (falling, feet near the top of
+    the hitbox) deals damage unless MUSE is stomp-immune (then a safe
+    bounce); anything else hurts."""
+    hurt = hurt_steps("boss-touch", seg)
+    landing = [if_value("boss-if-immune", B_IMM, "==", 0, boss_damage("boss-stomp", seg, True),
+                        player_safe("boss-safe", knock_off("boss-safe-knock")))]
+    stomp_or_hurt = event("boss-if-falling", "EVENT_IF", {
+        "condition": {"type": "gt", "valueA": {"type": "engineField", "value": "plat_vel_y"},
+                      "valueB": {"type": "number", "value": 0}},
+        "__collapseElse": False,
+    }, {"true": [if_expr("boss-if-high", f"{v(P_Y)} <= {v(H_Y)} + ({STOMP_DY})", landing, hurt)],
+        "false": hurt})
+    # State 0 (entering) and 1 (fighting) both hurt; only defeat (2) is inert.
+    # Previously state 0 skipped all contact, so walking into MUSE on entry
+    # did nothing — a common "I touched it and took no damage" report.
+    # After the hit (or a blocked one during invuln), rearm so a still-
+    # overlapping touch hurts again once the grace window ends.
+    return [unless_done("boss-contact-done", [if_value("boss-contact-live", B_STATE, "!=", 2, [
+        if_expr("boss-contact-free", f"{v(HURT_LOCK)} == 0 && {v(B_INV)} == 0", [
+            event("boss-py", "EVENT_ACTOR_GET_POSITION", {"actorId": "player", "vectorX": P_X, "vectorY": P_Y, "units": "pixels"}),
+            event("boss-hy", "EVENT_ACTOR_GET_POSITION", {"actorId": "$self$", "vectorX": "25", "vectorY": H_Y, "units": "pixels"}),
+            stomp_or_hurt,
+        ]),
+        *rearm_actor_collision("boss-rearm"),
+    ])])]
+
+
+def boss_shot(seg: dict) -> list:
+    return [unless_done("boss-shot-done", [if_value("boss-shot-live", B_STATE, "!=", 2, [
+        if_value("boss-shot-ready", B_SHOT_CD, "==", 0, boss_damage("boss-shot", seg, False)),
+    ])])]
+
+
+def boss_blob_kill(tag: str, k: int, bounce: bool) -> list:
+    drop = uid(BOSS_DROPS[k])
+    steps = [
+        event(f"{tag}-hide", "EVENT_ACTOR_HIDE", {"actorId": "$self$"}),
+        event(f"{tag}-nocol", "EVENT_ACTOR_COLLISIONS_DISABLE", {"actorId": "$self$"}),
+        beep(f"{tag}-sound", 6 if bounce else 5),
+    ]
+    if bounce:
+        steps.append(event(f"{tag}-bounce", "EVENT_PLAYER_BOUNCE", {"height": "medium"}))
+    steps += [
+        *add_score(f"{tag}", BOSS_KEY, POINTS["blob"]),
+        event(f"{tag}-where", "EVENT_ACTOR_GET_POSITION", {"actorId": "$self$", "vectorX": "25", "vectorY": "26", "units": "tiles"}),
+        event(f"{tag}-drop-pos", "EVENT_ACTOR_SET_POSITION", {
+            "actorId": drop, "x": {"type": "variable", "value": "25"},
+            "y": {"type": "number", "value": FLOOR_TOP - 3}, "units": "tiles"}),
+        event(f"{tag}-drop-on", "EVENT_ACTOR_ACTIVATE", {"actorId": drop}),
+        event(f"{tag}-drop-show", "EVENT_ACTOR_SHOW", {"actorId": drop}),
+        set_number(f"{tag}-free", B_BLOB[k], 0),
+        deactivate(f"{tag}-off"),
+    ]
+    return steps
+
+
+def boss_blob_contact(k: int, seg: dict) -> list:
+    """Released blob contact. Stomp always works; side touch hurts unless the
+    player is in a grace window (hurt lock or post-stomp B_INV)."""
+    tag = f"boss-blob{k + 1}"
+    hurt = hurt_steps(tag, seg)
+    falling = event(f"{tag}-if-falling", "EVENT_IF", {
+        "condition": {"type": "gt", "valueA": {"type": "engineField", "value": "plat_vel_y"},
+                      "valueB": {"type": "number", "value": 0}},
+        "__collapseElse": False,
+    }, {"true": boss_blob_kill(f"{tag}-fall", k, True),
+        "false": [if_expr(f"{tag}-side-free", f"{v(HURT_LOCK)} == 0 && {v(B_INV)} == 0", hurt)]})
+    body = event(f"{tag}-if", "EVENT_IF_ACTOR_RELATIVE_TO_ACTOR", {
+        "actorId": "player", "operation": "up", "otherActorId": "$self$", "__collapseElse": False,
+    }, {"true": boss_blob_kill(f"{tag}-above", k, True), "false": [falling]})
+    return [unless_done(f"{tag}-done", [body, *rearm_actor_collision(f"{tag}-rearm")])]
+
+
+def imm_tick(name: str) -> list:
+    """One 16-frame tick of stomp immunity: count down and blink the cheeks."""
+    return [if_value(f"{name}-imm-on", B_IMM, ">", 0, [
+        event(f"{name}-imm-dec", "EVENT_DEC_VALUE", {"variable": B_IMM}),
+        if_expr(f"{name}-imm-blink", f"{v(B_IMM)} % 2 == 1", [set_muse_frame(f"{name}-blink-off", 1)],
+                [set_muse_frame(f"{name}-blink-on", 0)]),
+    ])]
+
+
+def muse_walk(name: str, target) -> list:
+    """One engine-driven walk: Move To at the actor's fixed speed, no
+    collisions, horizontal only. actors_update steps the single metasprite
+    by the same amount every frame and sets its facing; the boss thread just
+    waits for the move to finish (a defeat cancels it)."""
+    return [
+        event(f"{name}-move", "EVENT_ACTOR_MOVE_TO", {
+            "actorId": uid(HITBOX), "x": {"type": "number", "value": target},
+            "y": {"type": "number", "value": MUSE_Y}, "units": "pixels",
+            "moveType": "horizontal", "collideWith": [], "lockDirection": []}),
+        event(f"{name}-where", "EVENT_ACTOR_GET_POSITION", {"actorId": uid(HITBOX), "vectorX": B_X, "vectorY": "26", "units": "pixels"}),
+    ]
+
+
+def boss_loop(seg: dict) -> list:
+    """The boss thread: walk in from the right, then patrol the whole arena
+    left-right. At each end: burst, maybe release a blob, a brief rest,
+    a telegraph, then turn and walk on."""
+    rest = [
+        set_expr("boss-rest", B_TMP2, f"({v(B_HP)} > 5) * 10 + ({v(B_HP)} <= 5 && {v(B_HP)} > 2) * 7 + ({v(B_HP)} <= 2) * 4"),
+        loop_while("boss-rest-loop", f"{v(B_TMP2)} > 0 && {v(B_STATE)} == 1", [
+            wait_frames("boss-rest-tick", 4),
+            event("boss-rest-dec", "EVENT_DEC_VALUE", {"variable": B_TMP2}),
+        ]),
+        if_value("boss-tele-live", B_STATE, "==", 1, [
+            beep("boss-tele-beep", 1),
+            *[e for i in range(2) for e in (
+                set_muse_frame(f"boss-tele-off{i}", 1), wait_frames(f"boss-tele-w{i}a", 6),
+                set_muse_frame(f"boss-tele-on{i}", 0), wait_frames(f"boss-tele-w{i}b", 6))],
+        ]),
+    ]
+    entering = [
+        *muse_walk("boss-enter", MUSE_RIGHT),
+        beep("boss-enter-stomp", 1),
+        set_number("boss-fight", B_STATE, 1),
+        set_number("boss-dir-l", B_DIR, 1),
+    ]
+    fighting = [
+        if_value("boss-hp-fast", B_HP, "<=", 2, [
+            event("boss-speed2", "EVENT_ACTOR_SET_MOVEMENT_SPEED", {"actorId": uid(HITBOX), "speed": 2})]),
+        if_value("boss-dir", B_DIR, "==", 1, muse_walk("boss-walk-l", MUSE_LEFT), muse_walk("boss-walk-r", MUSE_RIGHT)),
+        if_value("boss-still-live", B_STATE, "==", 1, [
+            if_value("boss-turn", B_DIR, "==", 1, [set_number("boss-turn-r", B_DIR, 0)], [set_number("boss-turn-l", B_DIR, 1)]),
+            event("boss-burst-tick", "EVENT_DEC_VALUE", {"variable": B_BURST}),
+            if_expr("boss-burst-now", f"{v(B_BURST)} <= 0 && {v(B_STATE)} == 1", [
+                *boss_burst("boss-burst"),
+                set_number("boss-burst-reset", B_BURST, BURST_EVERY),
+            ]),
+            event("boss-release-tick", "EVENT_DEC_VALUE", {"variable": B_RELEASE}),
+            if_expr("boss-release-now", f"{v(B_RELEASE)} <= 0 && {v(B_STATE)} == 1", [
+                *boss_release("boss-release"),
+                set_number("boss-release-reset", B_RELEASE, RELEASE_EVERY),
+            ]),
+            *rest,
+        ]),
+    ]
+    return [loop_while("boss-loop", f"{v(B_STATE)} != 2", [
+        if_value("boss-is-entering", B_STATE, "==", 0, entering, [
+            if_value("boss-is-fighting", B_STATE, "==", 1, fighting, [wait_frames("boss-idle", 1)]),
+        ]),
+    ]), event("boss-imm-timer-off", "EVENT_TIMER_DISABLE", {"timer": 2}), *boss_finale(seg)]
+
+
+def boss_init(seg: dict) -> list:
+    # A fresh visit restores full HP; a respawn reload (var 10 still 1 here,
+    # segment_init clears it) keeps the damage already done.
+    script = [if_value("boss-hp-fresh", RESPAWN_VAR, "==", 0, [set_number("boss-hp-full", B_HP, BOSS_HP)])]
+    script += segment_init(seg)
+    script += [
+        # Boss rule (v7): start with no chip and 0 ammo. A silicon chip sits
+        # on the top ledge; electrons only come from defeated released blobs.
+        set_number("boss-chip", "2", 0),
+        set_number("boss-ammo0", "0", 0),
+        set_number("boss-power0", POWER_VAR, 0),
+        *player_palette_events("boss-unpower-pal"),
+        show_counter("boss-ammo-hud", f"actor_ammo_{BOSS_KEY}", "0"),
+        set_number("boss-x", B_X, MUSE_ENTRY),
+        set_number("boss-dir0", B_DIR, 1),
+        set_number("boss-state0", B_STATE, 0),
+        set_number("boss-show0", B_SHOW, 1),
+        set_number("boss-inv0", B_INV, 0),
+        set_number("boss-imm0", B_IMM, 0),
+        # B_COL/B_TMP are unused since v5 but stay set so GB Studio keeps
+        # the variable numbering (memory slot = id) stable for debugging.
+        set_number("boss-col0", B_COL, 0),
+        set_number("boss-tmp0", B_TMP, 0),
+        set_number("boss-shotcd0", B_SHOT_CD, 0),
+        set_number("boss-burst0", B_BURST, 1),
+        set_number("boss-release0", B_RELEASE, 2),
+        set_number("boss-blob0-free", B_BLOB[0], 0),
+        set_number("boss-blob1-free", B_BLOB[1], 0),
+        if_value("boss-hp-sane", B_HP, "<=", 0, [set_number("boss-hp0", B_HP, BOSS_HP)]),
+        set_muse_frame("boss-cheeks0", 0),
+        event("boss-speed0", "EVENT_ACTOR_SET_MOVEMENT_SPEED", {"actorId": uid(HITBOX), "speed": 1}),
+        # Stomp immunity ticks on timer 2 (GBVM timers tick in 16-frame units), so it counts down
+        # while the engine walks MUSE and the boss thread is blocked.
+        event("boss-imm-timer", "EVENT_SET_TIMER_SCRIPT",
+              {"timer": 2, "duration": 16 / 60, "units": "frames", "frames": 16},
+              {"script": imm_tick("boss-timer")}),
+    ]
+    for k in range(len(BOSS_BLOBS)):
+        script.append(event(f"boss-init-blob{k}", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(BOSS_BLOBS[k])}))
+    for k in range(len(BOSS_DROPS)):
+        script.append(event(f"boss-init-drop{k}", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(BOSS_DROPS[k])}))
+    script += [
+        event("boss-init-car", "EVENT_ACTOR_DEACTIVATE", {"actorId": uid(BOSS_ROADSTER)}),
+        # Chip stays active on the ledge so Grok Bot can collect it.
+        *draw_pips("boss-pips"),
+        *place_boss("boss-park"),
+        event("boss-thread", "EVENT_THREAD_START", {"variable": "T1", "__scriptTabs": "true"}, {"true": boss_loop(seg)}),
+    ]
+    return script
+
+
+def write_boss(painted: dict, bg_ids: list[str], sprite_ids: list[str]) -> None:
+    seg = boss_segment()
+    key = BOSS_KEY
+    scenes_dir = ROOT / "project" / "scenes"
+    level_dir = scenes_dir / "level_10_boss"
+    actor_dir = level_dir / "actors"
+    delete_gbsres(actor_dir)
+    delete_gbsres(level_dir / "triggers")
+    boss_sprites = sprite_ids[:6] + [uid("palette-Muse Pink"), sprite_ids[7]]
+    boss_bg = [uid("palette-Muse Arena"), uid("palette-Far Hills"), uid("palette-Muse Body"), uid("palette-Muse HP")] + bg_ids[4:]
+    index = len(SEGMENTS) + 2 + len(BOOT_SCREENS)
+    write_json(level_dir / "scene.gbsres", scene(
+        name=f"Level 10 {BOSS_NAME}", symbol=BOSS_SCENE, index=index,
+        x=world_x(len(SEGMENTS) + 1), y=40 + CLEAR_H * 8 + SCENE_GAP,
+        width=CLEAR_W, height=CLEAR_H, background_symbol="bg_level10",
+        palette_ids=boss_bg, sprite_palette_ids=boss_sprites, script=boss_init(seg),
+        collisions=painted["level10"]["collisions"],
+        player_hit3=[if_expr("boss-spark-free", f"{v(HURT_LOCK)} == 0 && {v(B_INV)} == 0",
+                             hurt_steps("boss-spark", seg))],
+    ))
+    n = 0
+
+    def add(file, **kw):
+        nonlocal n
+        write_json(actor_dir / file, actor(index=n, **kw))
+        n += 1
+
+    add("lives.gbsres", name="Lives", symbol=f"actor_lives_{key}", x=LIVES_AT[0], y=LIVES_AT[1],
+        sprite_symbol="sprite_lives", palette_name="Blob Red", script=[], frame=3, animate=False, pinned=True, collision_group="")
+    add("ammo.gbsres", name="Ammo", symbol=f"actor_ammo_{key}", x=AMMO_AT[0], y=AMMO_AT[1],
+        sprite_symbol="sprite_ammo", palette_name="Electron Blue", script=[], frame=0, animate=False, pinned=True, collision_group="")
+    for offset, (tag, _place, sprite) in enumerate(SCORE_DIGITS):
+        add(f"score_{tag}.gbsres", name=f"Score {tag}", symbol=f"actor_score_{tag}_{key}", x=SCORE_AT + offset, y=HUD_ROW,
+            sprite_symbol=sprite, palette_name="Electron Blue", script=[], animate=False, pinned=True, collision_group="")
+    add("hitbox.gbsres", name=f"{BOSS_NAME}", symbol=HITBOX, x=MUSE_ENTRY // 8, y=MUSE_Y // 8,
+        sprite_symbol="sprite_muse_body", palette_name="Muse Pink", script=boss_contact(seg),
+        hit1_script=boss_shot(seg), animate=False, collision_group="1", move_speed=1)
+    # Pool actors start parked off-screen. boss_init deactivates them; release
+    # / kill scripts move and activate them. Parking stops the one-frame
+    # "appear then vanish" flash at scene start (GB Studio boots every actor
+    # active before the scene script runs).
+    for k, symbol in enumerate(BOSS_BLOBS):
+        add(f"blob_{k + 1}.gbsres", name=f"Released Blob {k + 1}", symbol=symbol,
+            x=BOSS_PARK[0], y=BOSS_PARK[1],
+            sprite_symbol="sprite_enemy_red_blob", palette_name="Blob Red", script=boss_blob_contact(k, seg),
+            update_script=enemy_update(f"boss-blob{k + 1}"), hit1_script=boss_blob_kill(f"boss-blob{k + 1}-shot", k, False))
+    # 1-tile spark orb for drops (not the 2-tile electron): Muse (3) + player
+    # (2) + blob (1) + two 2-tile drops overflowed the 10/line limit and made
+    # sprites flicker out. One-tile drops keep the floor row at <= 9.
+    for k, symbol in enumerate(BOSS_DROPS):
+        add(f"drop_{k + 1}.gbsres", name=f"Electron Drop {k + 1}", symbol=symbol,
+            x=BOSS_PARK[0], y=BOSS_PARK[1],
+            sprite_symbol="sprite_muse_spark", palette_name="Electron Blue",
+            script=electron_script(f"{key}-drop{k + 1}", f"actor_ammo_{key}"), collision_group="2")
+    # Silicon chip on the mid-right ledge (row 7 → stand y = 5), clear of HUD.
+    add("silicon_chip.gbsres", name="Silicon Chip", symbol=BOSS_CHIP, x=18, y=5,
+        sprite_symbol="sprite_silicon_chip", palette_name="Chip Gray",
+        script=chip_script(f"{key}-chip"), collision_group="2")
+    # Roadster waits off-screen; boss_finale activates it for the Level-1 ending.
+    add("roadster.gbsres", name="Roadster", symbol=BOSS_ROADSTER,
+        x=BOSS_PARK[0], y=BOSS_PARK[1],
+        sprite_symbol="sprite_roadster", palette_name="Roadster White",
+        script=[], animate=False, collision_group="2")
+    if n > MAX_ACTORS:
+        raise SystemExit(f"boss arena has {n} actors")
+    # Win screen.
+    win_dir = scenes_dir / "win"
+    delete_gbsres(win_dir / "actors")
+    write_json(win_dir / "scene.gbsres", scene(
+        name="You Win", symbol=WIN_SCENE, index=index + 1,
+        x=world_x(len(SEGMENTS) + 1) + CLEAR_W * 8 + SCENE_GAP, y=40 + CLEAR_H * 8 + SCENE_GAP,
+        width=CLEAR_W, height=CLEAR_H, background_symbol="bg_win", palette_ids=bg_ids,
+        sprite_palette_ids=sprite_ids, collisions=painted["win"]["collisions"], scene_type="TOPDOWN",
+        script=[
+            hide_player("win-hide-player"),
+            *lock_dpad("win"),
+            *apply_player_choice("win"),
+            input_script("win-start", ["start", "a"], [
+                *reset_run("win-reset"),
+                switch_scene("win-to-title", "scene_title", *MENU_PLAYER),
+            ]),
+            beep("win-jingle-1", 6), beep("win-jingle-2", 8), beep("win-jingle-3", 10),
+            event("win-score", "EVENT_TEXT", {"text": f"THANKS FOR PLAYING\nSCORE ${SCORE_VAR}$0"}),
+        ],
+    ))
+    write_json(win_dir / "actors" / "grok_bot.gbsres", actor(
+        name="Win Bot", symbol="actor_win_bot", index=0, x=BOOT_BOT_AT[0], y=12,
+        sprite_symbol="sprite_player_grok", palette_name="Grok Bot", script=[],
+        update_script=boot_bot_update("win"), animate=False, collision_group=""))
+
+
+def boss_scanline_note() -> str:
+    # Floor row worst case after v7: Muse 3 + player 2 + blob 1 + drop 1
+    # (1-tile spark orb) + spark projectile 1 = 8; with a player shot (+2) = 10.
+    # Two 2-tile electron drops used to push the same row to 11 and flicker.
+    return (f"boss arena: HUD rows 10/10; sprite MUSE {MUSE_W}x{MUSE_H} = "
+            f"{len(MUSE_TILES)} OAM tiles, <= 3 per row; floor peak 10/10 "
+            f"(1-tile ammo drops)")
+
+
 def main() -> None:
     validate_layout()
     painted = build_images()
@@ -4150,12 +5375,12 @@ def main() -> None:
     write_sprite_readme()
     for segment in SEGMENTS:
         info = painted[segment["symbol"]]
-        if len(info["collisions"]) != SEG_W * LEVEL_H:
+        if len(info["collisions"]) != seg_w(segment) * LEVEL_H:
             raise SystemExit(f"{segment['name']} collision size mismatch")
-        if info["tiles"] > 16:
+        if info["tiles"] > (16 if segment.get("level", 1) == 1 else 24):
             raise SystemExit(f"{segment['name']} has {info['tiles']} background tiles")
         print(
-            f"{segment['name']}: {SEG_W} tiles, {actor_count(segment)} actors, "
+            f"{segment['name']}: {seg_w(segment)} tiles, {actor_count(segment)} actors, "
             f"{info['tiles']} background tiles, scanline peak {scanline_peak(segment)}/10"
         )
         print("\n".join(layout_rows(segment)))
@@ -4164,6 +5389,13 @@ def main() -> None:
         if tiles > 64:
             raise SystemExit(f"{key} has {tiles} background tiles")
         print(f"{key.title()}: {tiles} background tiles")
+    for key in ("level10", "win"):
+        tiles = painted[key]["tiles"]
+        limit = 256 if key == "level10" else 64
+        if tiles > limit:
+            raise SystemExit(f"{key} has {tiles} background tiles")
+        print(f"{key}: {tiles} background tiles")
+    print(boss_scanline_note())
     print("Electrons:", sum(len(segment["electrons"]) for segment in SEGMENTS))
     print("Blobs:", sum(len(segment["blobs"]) for segment in SEGMENTS))
     print("Wrote", ROOT / "GrokBotPlatformer.gbsproj")

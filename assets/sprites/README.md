@@ -14,7 +14,7 @@ GB Studio reads every `.png` in this folder. The Level 1 sheets below are 16x16,
 | player_blob.png | Same style, irregular blob (shape 7). |
 | enemy_red_blob.png | Grok Blob. Two frames, cream eyes, black pupils, belly, brows, and feet. |
 | electron.png | Electron pickup and the projectile Grok Bot fires. |
-| silicon_chip.png | One power-up. Collecting it unlocks firing for the rest of the run. |
+| silicon_chip.png | One power-up. Collecting it unlocks firing until the next hit, death or level change (boss arena: ammo only). |
 | lives.png | Four frames. Each frame is a black badge with a heart and a digit, 0 through 3. The pinned actor shows the frame that matches `lives`. |
 | ammo.png | One frame per electron count, from 0 up. Each frame is a blue badge with two digits. The pinned actor shows the frame that matches `electrons`. |
 | flyer.png | Zap Bat, a small winged bot. Two frames, wings up and down. |
