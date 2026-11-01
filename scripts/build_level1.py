@@ -1195,16 +1195,21 @@ def electron_total() -> int:
 
 
 def paint_ammo() -> list[list[tuple[int, int, int, int]]]:
-    """One frame per ammo value. Blue plate, two white digits.
+    """One frame per ammo value (0..AMMO_MAX). Blue plate, one white digit.
 
-    On the Electron Blue palette, BLUE is slot 3 and E_WHITE is slot 1.
+    Digit fits in the LEFT 8 px; right 8 stay clear so the frame is 1 hardware
+    sprite (was 2). Ammo caps at 8, so one digit is enough. On Electron Blue,
+    BLUE is slot 3 and E_WHITE is slot 1.
     """
     count = AMMO_MAX + 1
-    image = blank(count * 16, 16, BLUE)
+    image = blank(count * 16, 16, CLEAR)
     for value in range(count):
         origin = value * 16
-        draw_digit(image, origin + 1, 3, value // 10, E_WHITE, 2)
-        draw_digit(image, origin + 8, 3, value % 10, E_WHITE, 2)
+        for y in range(16):
+            for x in range(8):
+                image[y][origin + x] = BLUE
+        # Scale-2 digit centred in the 8 px badge (digit is 3 px wide → 6 px).
+        draw_digit(image, origin + 1, 3, value, E_WHITE, 2)
     return image
 
 
@@ -1373,27 +1378,31 @@ def solid_top(segment: dict, x: int) -> int | None:
 
 
 def paint_lives() -> list[list[tuple[int, int, int, int]]]:
-    """Four frames. Frame index matches `lives`: a heart and the digit 0 through 3.
+    """Four frames. Frame index matches `lives`: heart + digit in the LEFT 8 px.
 
-    On Blob Red the heart (RED, mid band) is red, the digit (CREAM, light
-    band) is cream, and the badge (BLACK) is black.
+    Right 8 px stay clear so GB Studio drops that tile: 1 hardware sprite
+    per frame (was 2). On Blob Red the heart (RED) is red, the digit (CREAM)
+    is cream, and the badge (BLACK) is black.
     """
     heart = (
-        "0110110",
-        "1111111",
-        "1111111",
-        "0111110",
-        "0011100",
-        "0001000",
+        "0110",
+        "1111",
+        "1111",
+        "0110",
+        "0010",
     )
-    image = blank(64, 16, BLACK)
+    # Transparent canvas; only the left column of each 16 px frame is painted.
+    image = blank(64, 16, CLEAR)
     for frame in range(4):
         ox = frame * 16
+        for y in range(16):
+            for x in range(8):
+                image[y][ox + x] = BLACK
         for y, row in enumerate(heart):
             for x, bit in enumerate(row):
                 if bit == "1":
-                    image[5 + y][ox + x] = RED
-        draw_digit(image, ox + 9, 3, frame, CREAM, 2)
+                    image[1 + y][ox + 2 + x] = RED
+        draw_digit(image, ox + 2, 8, frame, CREAM, 1)
     return image
 
 
@@ -3385,7 +3394,7 @@ def build_resources(collisions: dict) -> None:
             height=16,
             animation_type="fixed",
             animations=lives_animations(),
-            num_tiles=8,
+            num_tiles=4,  # v8: 1 tile per frame (left-8 badge)
         ),
     )
     write_json(
@@ -3461,7 +3470,7 @@ def build_resources(collisions: dict) -> None:
             height=16,
             animation_type="fixed",
             animations=frames_animation("ammo", ammo_frames, HUD_TILE_Y),
-            num_tiles=ammo_frames * 2,
+            num_tiles=ammo_frames,  # v8: 1 tile per frame (left-8 badge)
         ),
     )
     for segment in SEGMENTS:
@@ -4412,12 +4421,13 @@ def scanline_peak(segment: dict) -> int:
         rows = [0] * (LEVEL_H + 2)
         # A 16 px actor at tile y covers tile rows y-1 and y (see HUD_ROW);
         # the 2 px nudge spills into row y+1.
+        # v8: lives and ammo badges are 1 hardware sprite each (left-8 art).
         for _x, y in hud:
             for row in (y - 1, y, y + 1):
-                rows[row] += 2
-        # Score digits: 1 + 1 + 2 hardware sprites on the HUD row.
+                rows[row] += 1
+        # Score digits: 1 + 1 + 1 + 2 hardware sprites on the HUD row (~5).
         for row in (HUD_ROW - 1, HUD_ROW, HUD_ROW + 1):
-            rows[row] += 4
+            rows[row] += 5
         bolts = 0
         for kind, x, y in segment_bodies(segment):
             reach = PATROL.get(kind, 0)
@@ -4613,7 +4623,7 @@ B_SHOT_CD = "30"  # 20-frame boss grace after an electron hit (shots only)
 IMM_TICKS = 7  # ~112 frames of stomp immunity
 P_X = "31"  # player x (px) for the stomp knock-off
 BURST_LIFE = 1.2
-ARENA_LEDGES = [(0, 1, 11), (18, 19, 11), (0, 1, 7), (18, 19, 7), (3, 7, 4), (12, 16, 4)]
+ARENA_LEDGES = [(1, 2, 11), (18, 19, 11), (1, 2, 7), (18, 19, 7), (3, 7, 4), (12, 16, 4)]
 MUSE_SKY = "A0B8F0"
 
 
@@ -4655,48 +4665,51 @@ def paint_muse_tileset() -> list[list[tuple[int, int, int, int]]]:
 
 
 MUSE_ART = (
-    # 24x32, facing right. . clear, c cream, p pink cheek, d dark.
-    "........d...d...........",
-    ".......dcd.dcd..d.......",
-    "....d..dccdcccddcd......",
-    "...dcddccccccccccd..d...",
-    "....dccccccccccccdddcd..",
-    "..ddccccccccccccccccd...",
-    ".dccccccccccccccccccd...",
-    "..dcccccccccccccccccdd..",
-    ".dccccccccccccccccccccd.",
-    "dccccccccccccccccccccd..",
-    ".dccccccccccccccccccccd.",
-    "dccccccccccccdccccdcccd.",
-    ".dcccccccccccdccccdccccd",
-    "dccccccccccccdccccdcccd.",
-    ".dccccccccccccccccccccd.",
-    "dcccccccccccppcccccppccd",
-    ".dccccccccccppccccdppcd.",
-    "dcccccccccccccdccdccccd.",
-    ".dcccccccccccccddccccccd",
-    "dccccccccccccccccccccd..",
-    ".dccccccccccccccccccccd.",
-    "dccccccccccccccccccccd..",
-    ".dcccccccccccccccccccd..",
-    "dccccccccccccccccccccd..",
-    ".dccccccccccccccccccd...",
-    "..dccccccccccccccccccd..",
-    ".dcccccccccccccccccd....",
-    "..ddccccccccccccccdd....",
-    "....ddcccddddccccd......",
-    "...dcccccd..dcccccd.....",
-    "...dddddd...ddddddd.....",
-    "........................",
+    # 16x32, facing right. . clear, c cream, p pink cheek, d dark.
+    # Kept to 2 tiles wide so a body row is at most 2 hardware sprites
+    # (was 3 at 24 px); with player+blob+drop that leaves headroom under 10/line.
+    "......d.d.......",
+    ".....dcdcd.d....",
+    "....dccccccd....",
+    "...dccccccccd...",
+    "..dcccccccccd...",
+    ".dccccccccccd...",
+    ".dcccccccccccd..",
+    "dccccccccccccd..",
+    "dccccccccccccd..",
+    "dccccdccccdccd..",
+    "dccccdccccdccd..",
+    "dccccccccccccd..",
+    "dcccccppccppcd..",
+    "dcccccppccppcd..",
+    "dccccccdccdccd..",
+    "dcccccccddcccd..",
+    "dccccccccccccd..",
+    "dccccccccccccd..",
+    ".dccccccccccd...",
+    ".dccccccccccd...",
+    "..dccccccccd....",
+    "..dccccccccd....",
+    "...dccccccd.....",
+    "...ddccccdd.....",
+    "....dccddc......",
+    "....dccccd......",
+    "....dddddd......",
+    "................",
+    "................",
+    "................",
+    "................",
+    "................",
 )
 
 
 def paint_muse_sprite() -> list[list[tuple[int, int, int, int]]]:
-    """48x32 sheet: two 24x32 frames of MUSE (cheeks on, cheeks off).
+    """32x32 sheet: two 16x32 frames of MUSE (cheeks on, cheeks off).
 
-    Original art drawn at size: a round fuzzy cream creature with tufts,
-    dot eyes and a smile toward the right (flipLeft mirrors it) and pink
-    cheeks. One palette (Muse Pink: cream, pink, dark) for all tiles."""
+    Original art: a round fuzzy cream creature with tufts, dot eyes and a
+    smile toward the right (flipLeft mirrors it) and pink cheeks. One
+    palette (Muse Pink: cream, pink, dark) for all tiles. Width 16 keeps
+    each body row to 2 hardware sprites."""
     assert len(MUSE_ART) == MUSE_H and all(len(r) == MUSE_W for r in MUSE_ART)
     colour = {"c": WHITE, "p": GRAY, "d": BLACK}
     image = blank(2 * MUSE_W, MUSE_H, CLEAR)
@@ -4765,6 +4778,13 @@ def paint_arena():
             elif ty > FLOOR_TOP:
                 put_tile(tx, ty, ground[2])
                 collisions[ty * w + tx] = 15
+    # v8: solid left wall (column 0) so the player sprite cannot walk into
+    # OAM x_raw < 8 (hardware clips/hides sprites there — the Chromatic
+    # "disappears on the left" report).
+    wall = float_tile()
+    for ty in range(0, FLOOR_TOP):
+        put_tile(0, ty, wall)
+        collisions[ty * w + 0] = 15
     for x0, x1, row in ARENA_LEDGES:
         for tx in range(x0, x1 + 1):
             put_tile(tx, row, float_tile())
@@ -4835,14 +4855,14 @@ BOSS_ROADSTER = "actor_boss-roadster"
 BOSS_CHIP = "actor_boss-chip"
 # Park inactive pool actors off the 20-tile arena so they cannot flash on
 # screen for a frame before boss_init deactivates them (appear-then-gone).
-BOSS_PARK = (22, 0)
-# v5 sprite MUSE: one 24x32 metasprite actor (6 hardware sprites) moved by
-# the engine's own Move To at a fixed speed, so every tile moves together
-# in actors_update on the same frame and the script never touches x mid-walk.
-MUSE_W, MUSE_H = 24, 32
+BOSS_PARK = (22, FLOOR_TOP - 2)  # v8: same row as play, off-right; y=0 put OAM on the HUD band
+# v8 sprite MUSE: one 16x32 metasprite actor (4 hardware sprites, 2/row)
+# moved by Move To at 1 px/frame. Narrower body cuts floor-row peak so the
+# player keeps headroom under the 10/line hardware limit.
+MUSE_W, MUSE_H = 16, 32
 MUSE_Y = FLOOR_TOP * 8 - 16           # actor y (px): 16 px base on the floor
-MUSE_BOUNDS = (-2, -12, 20, 27)       # x, y (down), w, h from the base top-left
-MUSE_LEFT, MUSE_RIGHT = 20, 124       # patrol ends (actor x, px); body spans x-4 .. x+20
+MUSE_BOUNDS = (-2, -12, 16, 27)       # x, y (down), w, h from the base top-left
+MUSE_LEFT, MUSE_RIGHT = 24, 120       # patrol ends (actor x, px); body spans ~x-0 .. x+16
 MUSE_ENTRY = 152                      # walks in from the right edge
 MUSE_TILES: list = []                 # (col, row, palette slot) filled by paint_muse_sprite
 MUSE_PINK_SLOT = 6
@@ -4872,7 +4892,7 @@ def boss_segment() -> dict:
     }
 
 
-SPARK_X = {"left": -4, "right": 12}
+SPARK_X = {"left": -4, "right": 8}  # v8: Muse body ~16 px wide
 SPARK_Y = (-24, -32, -40)  # above MUSE's head (top at y-16), staggered, below the HUD band
 
 
@@ -4927,8 +4947,9 @@ def boss_release(name: str) -> list:
             event(f"{name}-b{k}-col", "EVENT_ACTOR_COLLISIONS_ENABLE", {"actorId": sym}),
             beep(f"{name}-b{k}-sound", 5),
         ]
-    return [if_value(f"{name}-b0-free", B_BLOB[0], "==", 0, release(0),
-                     [if_value(f"{name}-b1-free", B_BLOB[1], "==", 0, release(1))])]
+    # v8: at most one blob on screen. Two 16x16 blobs + Muse(2) + player(2)
+    # + drop hit 10/line; a single blob keeps the floor at <= 8 (9 with a shot).
+    return [if_value(f"{name}-b0-free", B_BLOB[0], "==", 0, release(0))]
 
 
 def boss_defeat(name: str, seg: dict) -> list:
@@ -5009,7 +5030,8 @@ def knock_off(name: str) -> list:
     """Bounce Grok Bot up and ease his x to just clear of MUSE's body on the
     nearer side over 6 frames (airborne, so the engine keeps the position)."""
     centre = f"{v(B_X)} + 8"
-    target = (f"({v(P_X)} < {centre}) * max({v(B_X)} - 4 - 18, 0) + "
+    # v8: floor of 10 px so both player tiles keep OAM x_raw >= 8 (no left clip).
+    target = (f"({v(P_X)} < {centre}) * max({v(B_X)} - 4 - 18, 10) + "
               f"({v(P_X)} >= {centre}) * min({v(B_X)} + 20 + 2, {CLEAR_W * 8 - 16})")
     steps = [event(f"{name}-bounce", "EVENT_PLAYER_BOUNCE", {"height": "high"}),
              set_expr(f"{name}-target", "25", target)]
@@ -5313,9 +5335,9 @@ def write_boss(painted: dict, bg_ids: list[str], sprite_ids: list[str]) -> None:
             x=BOSS_PARK[0], y=BOSS_PARK[1],
             sprite_symbol="sprite_enemy_red_blob", palette_name="Blob Red", script=boss_blob_contact(k, seg),
             update_script=enemy_update(f"boss-blob{k + 1}"), hit1_script=boss_blob_kill(f"boss-blob{k + 1}-shot", k, False))
-    # 1-tile spark orb for drops (not the 2-tile electron): Muse (3) + player
-    # (2) + blob (1) + two 2-tile drops overflowed the 10/line limit and made
-    # sprites flicker out. One-tile drops keep the floor row at <= 9.
+    # 1-tile spark orb for drops (not the 2-tile electron). v8 Muse is 2/row
+    # so Muse (2) + player (2) + blob (2) + drop (1) = 7 on the floor; a shot
+    # (+2) peaks at 9/10 with headroom.
     for k, symbol in enumerate(BOSS_DROPS):
         add(f"drop_{k + 1}.gbsres", name=f"Electron Drop {k + 1}", symbol=symbol,
             x=BOSS_PARK[0], y=BOSS_PARK[1],
@@ -5359,12 +5381,12 @@ def write_boss(painted: dict, bg_ids: list[str], sprite_ids: list[str]) -> None:
 
 
 def boss_scanline_note() -> str:
-    # Floor row worst case after v7: Muse 3 + player 2 + blob 1 + drop 1
-    # (1-tile spark orb) + spark projectile 1 = 8; with a player shot (+2) = 10.
-    # Two 2-tile electron drops used to push the same row to 11 and flicker.
-    return (f"boss arena: HUD rows 10/10; sprite MUSE {MUSE_W}x{MUSE_H} = "
-            f"{len(MUSE_TILES)} OAM tiles, <= 3 per row; floor peak 10/10 "
-            f"(1-tile ammo drops)")
+    # Floor row worst case after v8: Muse 2 + player 2 + blob 2 + drop 1 = 7;
+    # with a player shot (+2) = 9. HUD (lives1+ammo1+score~5) = 7, + player
+    # jump into the band = 9. Left wall keeps player OAM x_raw >= 8.
+    return (f"boss arena: HUD rows <=9/10; sprite MUSE {MUSE_W}x{MUSE_H} = "
+            f"{len(MUSE_TILES)} OAM tiles, <= 2 per row; floor peak <=9/10 "
+            f"(one blob, 1-tile ammo drops, left wall)")
 
 
 def main() -> None:
