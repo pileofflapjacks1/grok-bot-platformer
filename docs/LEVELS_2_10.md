@@ -198,3 +198,34 @@ actors drawn may be dropped for a frame (not seen in PyBoy tests).
 - **Chip/ammo:** boss entry no longer grants chip or 4 ammo. A silicon chip
   is on the mid-right ledge (clear of the HUD); electrons drop from
   defeated blobs only.
+
+## v8 — visual debug (PyBoy-only, untested on Chromatic)
+
+Root causes of the Chromatic report (player vanishing on the left of the Muse
+boss level, plus general sprite glitch risk):
+
+1. **10 sprites/scanline ceiling.** Hardware drops lowest-priority (highest OAM
+   index) sprites past 10/line. On the boss floor, Muse (was 24x32 = 3 tiles/row)
+   + player (2) + two blobs (2+2) + drop/spark could hit 10–19/line and drop the
+   player. Parked pool actors at world y=0 also put OAM on the HUD band even when
+   X was off the right edge (X>=168 still counts toward the limit).
+2. **Left-edge OAM clip.** Sprites with OAM `x_raw < 8` are partially (or fully
+   when `x_raw==0`) clipped. Knock-off / camera left edge could push the player
+   into that zone and make him disappear on the left.
+
+Fixes in this cart:
+
+- Muse metasprite shrunk to **16x32** (4 OAM, ≤2 per row).
+- Lives/ammo HUD numbers are **1 tile** each (was 2), freeing HUD band headroom.
+- Boss releases **at most one blob** at a time (slot 0 only).
+- Pool park moved to `(22, FLOOR_TOP-2)` so stray OAM is not on the HUD rows.
+- Solid **column-0 wall** on the boss arena; knock-off floor clamped to pixel x≥10.
+- Scanline peak target: levels 1–9 ≤7, boss ≤9 (1 of headroom under the HW limit).
+
+Gameplay rules unchanged: boss start still no chip / 0 ammo; fire only while
+holding chip; every level still ends with the roadster fly-out; Muse still moves
+1 px/frame; characters still face left/right; boot cards kept; original art only.
+
+PyBoy OAM metrics (scripted): L1–9 max 7/line, over10=0, leftclip=0, pdrop=0;
+L10 max 9/line, over10=0, pdrop=0, rare leftclip frames only. ROM:
+`/workspace/out/grok-bot-hero-v8.gb`.
